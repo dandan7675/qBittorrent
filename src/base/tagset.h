@@ -1,6 +1,6 @@
 /*
  * Bittorrent Client using Qt and libtorrent.
- * Copyright (C) 2018
+ * Copyright (C) 2021  Mike Tzou (Chocobo1)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -28,43 +28,22 @@
 
 #pragma once
 
-#include <QDir>
-#include <QFileSystemWatcher>
-#include <QHash>
-#include <QTimer>
-#include <QVector>
+#include <QMetaType>
+#include <QString>
 
-/*
- * Subclassing QFileSystemWatcher in order to support Network File
- * System watching (NFS, CIFS) on Linux and Mac OS.
- */
-class FileSystemWatcher final : public QFileSystemWatcher
+#include "base/orderedset.h"
+#include "base/utils/compare.h"
+
+class TagLessThan
 {
-    Q_OBJECT
-    Q_DISABLE_COPY(FileSystemWatcher)
-
 public:
-    explicit FileSystemWatcher(QObject *parent = nullptr);
-
-    QStringList directories() const;
-    void addPath(const QString &path);
-    void removePath(const QString &path);
-
-signals:
-    void torrentsAdded(const QStringList &pathList);
-
-private slots:
-    void scanLocalFolder(const QString &path);
-    void processPartialTorrents();
-    void scanNetworkFolders();
+    bool operator()(const QString &left, const QString &right) const;
 
 private:
-    void processTorrentsInDir(const QDir &dir);
-
-    // Partial torrents
-    QHash<QString, int> m_partialTorrents;
-    QTimer m_partialTorrentTimer;
-
-    QVector<QDir> m_watchedFolders;
-    QTimer m_watchTimer;
+    Utils::Compare::NaturalCompare<Qt::CaseInsensitive> m_compare;
+    Utils::Compare::NaturalCompare<Qt::CaseSensitive> m_subCompare;
 };
+
+using TagSet = OrderedSet<QString, TagLessThan>;
+
+Q_DECLARE_METATYPE(TagSet)

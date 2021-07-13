@@ -30,7 +30,6 @@
 
 #include <QDebug>
 #include <QIcon>
-#include <QSet>
 #include <QVector>
 
 #include "base/bittorrent/session.h"
@@ -315,10 +314,10 @@ TagModelItem *TagFilterModel::findItem(const QString &tag)
     return &m_tagItems[row];
 }
 
-QVector<TagModelItem *> TagFilterModel::findItems(const QSet<QString> &tags)
+QVector<TagModelItem *> TagFilterModel::findItems(const TagSet &tags)
 {
     QVector<TagModelItem *> items;
-    items.reserve(tags.size());
+    items.reserve(tags.count());
     for (const QString &tag : tags)
     {
         TagModelItem *item = findItem(tag);

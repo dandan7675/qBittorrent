@@ -1,6 +1,6 @@
 /*
  * Bittorrent Client using Qt and libtorrent.
- * Copyright (C) 2015  sledgehammer999 <hammered999@gmail.com>
+ * Copyright (C) 2021  Vladimir Golovnev <glassez@yandex.ru>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -28,31 +28,35 @@
 
 #pragma once
 
-#include <QStyledItemDelegate>
+#include <QDialog>
 
-class QAbstractItemModel;
-class QModelIndex;
-class QPainter;
-class QStyleOptionViewItem;
-class QTreeView;
+#include "base/settingvalue.h"
+#include "base/torrentfileswatcher.h"
 
-class PropertiesWidget;
+namespace Ui
+{
+    class WatchedFolderOptionsDialog;
+}
 
-class ScanFoldersDelegate final : public QStyledItemDelegate
+class WatchedFolderOptionsDialog final : public QDialog
 {
     Q_OBJECT
+    Q_DISABLE_COPY_MOVE(WatchedFolderOptionsDialog)
 
 public:
-    ScanFoldersDelegate(QObject *parent, QTreeView *foldersView);
+    explicit WatchedFolderOptionsDialog(const TorrentFilesWatcher::WatchedFolderOptions &watchedFolderOptions, QWidget *parent);
+    ~WatchedFolderOptionsDialog() override;
 
-private slots:
-    void comboboxIndexChanged(int index);
+    TorrentFilesWatcher::WatchedFolderOptions watchedFolderOptions() const;
 
 private:
-    void setModelData(QWidget *editor, QAbstractItemModel *model, const QModelIndex &index) const override;
-    void updateEditorGeometry(QWidget *editor, const QStyleOptionViewItem &option, const QModelIndex &) const override;
-    void setEditorData(QWidget *editor, const QModelIndex &index) const override;
-    QWidget *createEditor(QWidget *parent, const QStyleOptionViewItem &, const QModelIndex &index) const override;
+    void populateSavePathComboBox();
+    void loadState();
+    void saveState();
+    void onTMMChanged(int index);
+    void onCategoryChanged(int index);
 
-    QTreeView *m_folderView;
+    Ui::WatchedFolderOptionsDialog *m_ui;
+    QString m_savePath;
+    SettingValue<QSize> m_storeDialogSize;
 };

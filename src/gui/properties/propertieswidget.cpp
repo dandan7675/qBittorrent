@@ -81,6 +81,9 @@ PropertiesWidget::PropertiesWidget(QWidget *parent)
 
     m_state = VISIBLE;
 
+    // Files list
+    m_ui->filesList->header()->setContextMenuPolicy(Qt::CustomContextMenu);
+
     // Set Properties list model
     m_propListModel = new TorrentContentFilterModel(this);
     m_ui->filesList->setModel(m_propListModel);
@@ -108,6 +111,7 @@ PropertiesWidget::PropertiesWidget(QWidget *parent)
             , m_ui->filesList, qOverload<const QModelIndex &>(&QAbstractItemView::edit));
     connect(m_ui->filesList, &QWidget::customContextMenuRequested, this, &PropertiesWidget::displayFilesListMenu);
     connect(m_ui->filesList, &QAbstractItemView::doubleClicked, this, &PropertiesWidget::openItem);
+    connect(m_ui->filesList->header(), &QWidget::customContextMenuRequested, this, &PropertiesWidget::displayFileListHeaderMenu);
     connect(m_ui->filesList->header(), &QHeaderView::sectionMoved, this, &PropertiesWidget::saveSettings);
     connect(m_ui->filesList->header(), &QHeaderView::sectionResized, this, &PropertiesWidget::saveSettings);
     connect(m_ui->filesList->header(), &QHeaderView::sortIndicatorChanged, this, &PropertiesWidget::saveSettings);
@@ -173,6 +177,33 @@ PropertiesWidget::~PropertiesWidget()
     delete m_ui;
 }
 
+void PropertiesWidget::displayFileListHeaderMenu()
+{
+    QMenu *menu = new QMenu(this);
+    menu->setAttribute(Qt::WA_DeleteOnClose);
+
+    for (int i = 0; i < TorrentContentModelItem::TreeItemColumns::NB_COL; ++i)
+    {
+        QAction *myAct = menu->addAction(m_propListModel->headerData(i, Qt::Horizontal, Qt::DisplayRole).toString());
+        myAct->setCheckable(true);
+        myAct->setChecked(!m_ui->filesList->isColumnHidden(i));
+        if (i == TorrentContentModelItem::TreeItemColumns::COL_NAME)
+            myAct->setEnabled(false);
+
+        connect(myAct, &QAction::toggled, this, [this, i](const bool checked)
+        {
+            m_ui->filesList->setColumnHidden(i, !checked);
+
+            if (!m_ui->filesList->isColumnHidden(i) && (m_ui->filesList->columnWidth(i) <= 5))
+                m_ui->filesList->resizeColumnToContents(i);
+
+            saveSettings();
+        });
+    }
+
+    menu->popup(QCursor::pos());
+}
+
 void PropertiesWidget::showPiecesAvailability(bool show)
 {
     m_ui->labelPiecesAvailability->setVisible(show);
@@ -232,7 +263,8 @@ void PropertiesWidget::clear()
     m_ui->labelSavePathVal->clear();
     m_ui->labelCreatedOnVal->clear();
     m_ui->labelTotalPiecesVal->clear();
-    m_ui->labelHashVal->clear();
+    m_ui->labelInfohash1Val->clear();
+    m_ui->labelInfohash2Val->clear();
     m_ui->labelCommentVal->clear();
     m_ui->labelProgressVal->clear();
     m_ui->labelAverageAvailabilityVal->clear();
@@ -312,9 +344,9 @@ void PropertiesWidget::loadTorrentInfos(BitTorrent::Torrent *const torrent)
 
     // Save path
     updateSavePath(m_torrent);
-    // Info hash (Truncated info hash (torrent ID) with libtorrent2)
-    // TODO: Update label for this property to express its meaning more clearly (or change it to display real info hash(es))
-    m_ui->labelHashVal->setText(m_torrent->id().toString());
+    // Info hashes
+    m_ui->labelInfohash1Val->setText(m_torrent->infoHash().v1().isValid() ? m_torrent->infoHash().v1().toString() : tr("N/A"));
+    m_ui->labelInfohash2Val->setText(m_torrent->infoHash().v2().isValid() ? m_torrent->infoHash().v2().toString() : tr("N/A"));
     m_propListModel->model()->clear();
     if (m_torrent->hasMetadata())
     {

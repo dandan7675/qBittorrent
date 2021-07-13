@@ -30,10 +30,11 @@
 
 #include <optional>
 
-#include <QSet>
+#include <QMetaType>
 #include <QString>
 #include <QVector>
 
+#include "base/tagset.h"
 #include "torrent.h"
 #include "torrentcontentlayout.h"
 
@@ -45,7 +46,7 @@ namespace BitTorrent
     {
         QString name;
         QString category;
-        QSet<QString> tags;
+        TagSet tags;
         QString savePath;
         bool disableTempPath = false; // e.g. for imported torrents
         bool sequential = false;
@@ -62,3 +63,5 @@ namespace BitTorrent
         qreal ratioLimit = Torrent::USE_GLOBAL_RATIO;
     };
 }
+
+Q_DECLARE_METATYPE(BitTorrent::AddTorrentParams)

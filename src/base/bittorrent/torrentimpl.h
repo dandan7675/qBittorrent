@@ -42,24 +42,14 @@
 #include <QMap>
 #include <QObject>
 #include <QQueue>
-#include <QSet>
 #include <QString>
 #include <QVector>
 
+#include "base/tagset.h"
 #include "infohash.h"
 #include "speedmonitor.h"
 #include "torrent.h"
 #include "torrentinfo.h"
-
-#if (LIBTORRENT_VERSION_NUM == 20003)
-// file_prio_alert is missing to be forward declared in "libtorrent/fwd.hpp"
-namespace libtorrent
-{
-    TORRENT_VERSION_NAMESPACE_3
-    struct file_prio_alert;
-    TORRENT_VERSION_NAMESPACE_3_END
-}
-#endif
 
 namespace BitTorrent
 {
@@ -78,9 +68,15 @@ namespace BitTorrent
         HandleMetadata
     };
 
+    struct FileErrorInfo
+    {
+        lt::error_code error;
+        lt::operation_t operation;
+    };
+
     class TorrentImpl final : public QObject, public Torrent
     {
-        Q_DISABLE_COPY(TorrentImpl)
+        Q_DISABLE_COPY_MOVE(TorrentImpl)
         Q_DECLARE_TR_FUNCTIONS(BitTorrent::TorrentImpl)
 
     public:
@@ -115,7 +111,7 @@ namespace BitTorrent
         bool belongsToCategory(const QString &category) const override;
         bool setCategory(const QString &category) override;
 
-        QSet<QString> tags() const override;
+        TagSet tags() const override;
         bool hasTag(const QString &tag) const override;
         bool addTag(const QString &tag) override;
         bool removeTag(const QString &tag) override;
@@ -247,7 +243,7 @@ namespace BitTorrent
         QString actualStorageLocation() const;
 
     private:
-        typedef std::function<void ()> EventTrigger;
+        using EventTrigger = std::function<void ()>;
 
         void updateStatus();
         void updateStatus(const lt::torrent_status &nativeStatus);
@@ -255,6 +251,7 @@ namespace BitTorrent
 
         void handleFastResumeRejectedAlert(const lt::fastresume_rejected_alert *p);
         void handleFileCompletedAlert(const lt::file_completed_alert *p);
+        void handleFileErrorAlert(const lt::file_error_alert *p);
 #if (LIBTORRENT_VERSION_NUM >= 20003)
         void handleFilePrioAlert(const lt::file_prio_alert *p);
 #endif
@@ -310,12 +307,13 @@ namespace BitTorrent
         QHash<lt::file_index_t, QVector<QString>> m_oldPath;
 
         QHash<QString, QMap<lt::tcp::endpoint, int>> m_trackerPeerCounts;
+        FileErrorInfo m_lastFileError;
 
         // Persistent data
         QString m_name;
         QString m_savePath;
         QString m_category;
-        QSet<QString> m_tags;
+        TagSet m_tags;
         qreal m_ratioLimit;
         int m_seedingTimeLimit;
         TorrentOperatingMode m_operatingMode;

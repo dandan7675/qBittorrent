@@ -82,12 +82,6 @@ enum DeleteOption
     DeleteTorrentAndFiles
 };
 
-enum TorrentExportFolder
-{
-    Regular,
-    Finished
-};
-
 namespace Net
 {
     struct DownloadResult;
@@ -141,6 +135,13 @@ namespace BitTorrent
             AntiLeech = 2
         };
         Q_ENUM_NS(SeedChokingAlgorithm)
+
+        enum class ResumeDataStorageType
+        {
+            Legacy,
+            SQLite
+        };
+        Q_ENUM_NS(ResumeDataStorageType)
 
 #if defined(Q_OS_WIN)
         enum class OSMemoryPriority : int
@@ -204,7 +205,7 @@ namespace BitTorrent
     class Session : public QObject
     {
         Q_OBJECT
-        Q_DISABLE_COPY(Session)
+        Q_DISABLE_COPY_MOVE(Session)
 
     public:
         static void initInstance();
@@ -365,6 +366,8 @@ namespace BitTorrent
         void setSendBufferLowWatermark(int value);
         int sendBufferWatermarkFactor() const;
         void setSendBufferWatermarkFactor(int value);
+        int connectionSpeed() const;
+        void setConnectionSpeed(int value);
         int socketBacklogSize() const;
         void setSocketBacklogSize(int value);
         bool isAnonymousModeEnabled() const;
@@ -395,6 +398,9 @@ namespace BitTorrent
         void setAnnounceIP(const QString &ip);
         int maxConcurrentHTTPAnnounces() const;
         void setMaxConcurrentHTTPAnnounces(int value);
+        bool isReannounceWhenAddressChangedEnabled() const;
+        void setReannounceWhenAddressChangedEnabled(bool enabled);
+        void reannounceToAllTrackers() const;
         int stopTrackerTimeout() const;
         void setStopTrackerTimeout(int value);
         int maxConnections() const;
@@ -429,6 +435,8 @@ namespace BitTorrent
         void setTrackerFilteringEnabled(bool enabled);
         QStringList bannedIPs() const;
         void setBannedIPs(const QStringList &newList);
+        ResumeDataStorageType resumeDataStorageType() const;
+        void setResumeDataStorageType(ResumeDataStorageType type);
 #if defined(Q_OS_WIN)
         OSMemoryPriority getOSMemoryPriority() const;
         void setOSMemoryPriority(OSMemoryPriority priority);
@@ -570,8 +578,6 @@ namespace BitTorrent
         bool hasPerTorrentRatioLimit() const;
         bool hasPerTorrentSeedingTimeLimit() const;
 
-        void initResumeDataStorage();
-
         // Session configuration
         Q_INVOKABLE void configure();
         void configureComponents();
@@ -601,7 +607,7 @@ namespace BitTorrent
         bool addTorrent_impl(const std::variant<MagnetUri, TorrentInfo> &source, const AddTorrentParams &addTorrentParams);
 
         void updateSeedingLimitTimer();
-        void exportTorrentFile(const Torrent *torrent, TorrentExportFolder folder = TorrentExportFolder::Regular);
+        void exportTorrentFile(const TorrentInfo &torrentInfo, const QString &folderPath, const QString &baseName);
 
         void handleAlert(const lt::alert *a);
         void dispatchTorrentAlert(const lt::alert *a);
@@ -665,6 +671,7 @@ namespace BitTorrent
         CachedSettingValue<int> m_sendBufferWatermark;
         CachedSettingValue<int> m_sendBufferLowWatermark;
         CachedSettingValue<int> m_sendBufferWatermarkFactor;
+        CachedSettingValue<int> m_connectionSpeed;
         CachedSettingValue<int> m_socketBacklogSize;
         CachedSettingValue<bool> m_isAnonymousModeEnabled;
         CachedSettingValue<bool> m_isQueueingEnabled;
@@ -683,6 +690,7 @@ namespace BitTorrent
         CachedSettingValue<bool> m_includeOverheadInLimits;
         CachedSettingValue<QString> m_announceIP;
         CachedSettingValue<int> m_maxConcurrentHTTPAnnounces;
+        CachedSettingValue<bool> m_isReannounceWhenAddressChangedEnabled;
         CachedSettingValue<int> m_stopTrackerTimeout;
         CachedSettingValue<int> m_maxConnections;
         CachedSettingValue<int> m_maxUploads;
@@ -738,6 +746,7 @@ namespace BitTorrent
         CachedSettingValue<int> m_peerTurnoverCutoff;
         CachedSettingValue<int> m_peerTurnoverInterval;
         CachedSettingValue<QStringList> m_bannedIPs;
+        CachedSettingValue<ResumeDataStorageType> m_resumeDataStorageType;
 #if defined(Q_OS_WIN)
         CachedSettingValue<OSMemoryPriority> m_OSMemoryPriority;
 #endif
@@ -789,6 +798,8 @@ namespace BitTorrent
 #endif
 
         QList<MoveStorageJob> m_moveStorageQueue;
+
+        QString m_lastExternalIP;
 
         static Session *m_instance;
     };
