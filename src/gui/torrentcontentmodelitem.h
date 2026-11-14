@@ -1,5 +1,6 @@
 /*
  * Bittorrent Client using Qt and libtorrent.
+ * Copyright (C) 2026  Vladimir Golovnev <glassez@yandex.ru>
  * Copyright (C) 2006-2012  Christophe Dumez <chris@qbittorrent.org>
  *
  * This program is free software; you can redistribute it and/or
@@ -29,7 +30,7 @@
 #pragma once
 
 #include <QCoreApplication>
-#include <QVector>
+#include <QList>
 
 #include "base/bittorrent/downloadpriority.h"
 
@@ -40,6 +41,9 @@ class TorrentContentModelFolder;
 class TorrentContentModelItem
 {
     Q_DECLARE_TR_FUNCTIONS(TorrentContentModelItem)
+    Q_DISABLE_COPY_MOVE(TorrentContentModelItem)
+
+    friend class TorrentContentModelFolder;
 
 public:
     enum TreeItemColumns
@@ -59,7 +63,7 @@ public:
         FolderType
     };
 
-    explicit TorrentContentModelItem(TorrentContentModelFolder *parent);
+    TorrentContentModelItem();
     virtual ~TorrentContentModelItem();
 
     bool isRootItem() const;
@@ -84,14 +88,16 @@ public:
     int row() const;
 
 protected:
-    TorrentContentModelFolder *m_parentItem;
     // Root item members
-    QVector<QString> m_itemData;
+    QList<QString> m_itemData;
     // Non-root item members
     QString m_name;
-    qulonglong m_size;
-    qulonglong m_remaining;
-    BitTorrent::DownloadPriority m_priority;
-    qreal m_progress;
-    qreal m_availability;
+    qulonglong m_size = 0;
+    qulonglong m_remaining = 0;
+    BitTorrent::DownloadPriority m_priority = BitTorrent::DownloadPriority::Normal;
+    qreal m_progress = 0;
+    qreal m_availability = -1;
+
+private:
+    TorrentContentModelFolder *m_parentItem = nullptr;
 };

@@ -28,9 +28,11 @@
 
 #pragma once
 
+#include <QtTypes>
 #include <QHostAddress>
 
 class QString;
+class QStringView;
 
 namespace BitTorrent
 {
@@ -39,10 +41,12 @@ namespace BitTorrent
         QHostAddress ip;
         ushort port = 0;
 
-        static PeerAddress parse(const QString &address);
+        static PeerAddress parse(QStringView address);
         QString toString() const;
+
+        friend bool operator<(const PeerAddress &left, const PeerAddress &right);
+        friend bool operator==(const PeerAddress &left, const PeerAddress &right) = default;
     };
 
-    bool operator==(const PeerAddress &left, const PeerAddress &right);
-    uint qHash(const PeerAddress &addr, uint seed);
+    std::size_t qHash(const PeerAddress &addr, std::size_t seed = 0);
 }

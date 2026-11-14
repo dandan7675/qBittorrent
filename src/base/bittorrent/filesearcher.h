@@ -1,6 +1,6 @@
 /*
  * Bittorrent Client using Qt and libtorrent.
- * Copyright (C) 2020  Vladimir Golovnev <glassez@yandex.ru>
+ * Copyright (C) 2020-2025  Vladimir Golovnev <glassez@yandex.ru>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -30,23 +30,24 @@
 
 #include <QObject>
 
-namespace BitTorrent
+#include "base/path.h"
+
+template <typename T> class QPromise;
+
+struct FileSearchResult
 {
-    class TorrentID;
-}
+    Path savePath;
+    PathList fileNames;
+};
 
 class FileSearcher final : public QObject
 {
     Q_OBJECT
-    Q_DISABLE_COPY(FileSearcher)
+    Q_DISABLE_COPY_MOVE(FileSearcher)
 
 public:
-    FileSearcher() = default;
+    using QObject::QObject;
 
-public slots:
-    void search(const BitTorrent::TorrentID &id, const QStringList &originalFileNames
-                , const QString &completeSavePath, const QString &incompleteSavePath);
-
-signals:
-    void searchFinished(const BitTorrent::TorrentID &id, const QString &savePath, const QStringList &fileNames);
+    void search(const PathList &originalFileNames, const Path &savePath
+            , const Path &downloadPath, bool forceAppendExt, QPromise<FileSearchResult> &promise);
 };

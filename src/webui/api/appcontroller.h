@@ -35,7 +35,7 @@
 class AppController : public APIController
 {
     Q_OBJECT
-    Q_DISABLE_COPY(AppController)
+    Q_DISABLE_COPY_MOVE(AppController)
 
 public:
     using APIController::APIController;
@@ -44,10 +44,18 @@ private slots:
     void webapiVersionAction();
     void versionAction();
     void buildInfoAction();
+    void processInfoAction();
     void shutdownAction();
     void preferencesAction();
     void setPreferencesAction();
     void defaultSavePathAction();
+    void sendTestEmailAction();
+    void getDirectoryContentAction();
+    void getFreeSpaceAtPathAction();
+    void cookiesAction();
+    void setCookiesAction();
+    void rotateAPIKeyAction();
+    void deleteAPIKeyAction();
 
     void networkInterfaceListAction();
     void networkInterfaceAddressListAction();

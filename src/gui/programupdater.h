@@ -30,8 +30,9 @@
 #pragma once
 
 #include <QObject>
-#include <QString>
 #include <QUrl>
+
+#include "base/utils/version.h"
 
 namespace Net
 {
@@ -41,22 +42,34 @@ namespace Net
 class ProgramUpdater final : public QObject
 {
     Q_OBJECT
-    Q_DISABLE_COPY(ProgramUpdater)
+    Q_DISABLE_COPY_MOVE(ProgramUpdater)
 
 public:
+    using Version = Utils::Version<4, 3>;
+
     using QObject::QObject;
 
-    void checkForUpdates() const;
-    QString getNewVersion() const;
+    void checkForUpdates();
+    Version getNewVersion() const;
     bool updateProgram() const;
 
 signals:
     void updateCheckFinished();
 
 private slots:
-    void rssDownloadFinished(const Net::DownloadResult &result);
+    void fallbackDownloadFinished(const Net::DownloadResult &result, Version &version);
 
 private:
-    QString m_newVersion;
-    QUrl m_updateURL;
+    enum class RemoteSource
+    {
+        QbtMain,
+        QbtBackup
+    };
+
+    void handleFinishedRequest();
+    RemoteSource getLatestRemoteSource() const;
+
+    int m_pendingRequestCount = 0;
+    Version m_qbtMainVersion;
+    Version m_qbtBackupVersion;
 };

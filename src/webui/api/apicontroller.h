@@ -1,6 +1,6 @@
 /*
  * Bittorrent Client using Qt and libtorrent.
- * Copyright (C) 2018  Vladimir Golovnev <glassez@yandex.ru>
+ * Copyright (C) 2018-2026  Vladimir Golovnev <glassez@yandex.ru>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -28,46 +28,61 @@
 
 #pragma once
 
-#include <QObject>
-#include <QVariant>
+#include <variant>
+
 #include <QtContainerFwd>
+#include <QObject>
+#include <QString>
+#include <QVariant>
 
-class QString;
+#include "base/applicationcomponent.h"
+#include "base/http/request.h"
+#include "base/path.h"
+#include "apistatus.h"
 
-struct ISessionManager;
-
-using DataMap = QHash<QString, QByteArray>;
+using DataList = QList<Http::UploadedFile>;
 using StringMap = QHash<QString, QString>;
 
-class APIController : public QObject
+struct RegularAPIResult
+{
+    QVariant data {};
+    QString mimeType {};
+    QString filename {};
+    APIStatus status = APIStatus::Ok;
+};
+
+struct StreamFileAPIResult
+{
+    Path filePath;
+};
+
+using APIResult = std::variant<RegularAPIResult, StreamFileAPIResult>;
+
+class APIController : public ApplicationComponent<QObject>
 {
     Q_OBJECT
-    Q_DISABLE_COPY(APIController)
-
-#ifndef Q_MOC_RUN
-#define WEBAPI_PUBLIC
-#define WEBAPI_PRIVATE
-#endif
+    Q_DISABLE_COPY_MOVE(APIController)
 
 public:
-    explicit APIController(ISessionManager *sessionManager, QObject *parent = nullptr);
+    explicit APIController(IApplication *app, QObject *parent = nullptr);
 
-    QVariant run(const QString &action, const StringMap &params, const DataMap &data = {});
-
-    ISessionManager *sessionManager() const;
+    APIResult run(const QString &action, const StringMap &params, const DataList &data = {});
 
 protected:
     const StringMap &params() const;
-    const DataMap &data() const;
-    void requireParams(const QVector<QString> &requiredParams) const;
+    const DataList &data() const;
+    void requireParams(const QList<QString> &requiredParams) const;
 
     void setResult(const QString &result);
     void setResult(const QJsonArray &result);
     void setResult(const QJsonObject &result);
+    void setResult(const QByteArray &result, const QString &mimeType = {}, const QString &filename = {});
+    void setResult(const Path &filePath);
+
+    void setStatus(APIStatus status);
 
 private:
-    ISessionManager *m_sessionManager;
     StringMap m_params;
-    DataMap m_data;
-    QVariant m_result;
+    DataList m_data;
+    APIResult m_result;
 };

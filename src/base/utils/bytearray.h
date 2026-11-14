@@ -1,6 +1,7 @@
 /*
  * Bittorrent Client using Qt and libtorrent.
- * Copyright (C) 2018  Mike Tzou (Chocobo1)
+ * Copyright (C) 2023-2025  Vladimir Golovnev <glassez@yandex.ru>
+ * Copyright (C) 2018-2026  Mike Tzou (Chocobo1)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -28,17 +29,32 @@
 
 #pragma once
 
-#include <QString>
+#include <Qt>
 #include <QtContainerFwd>
+#include <QByteArrayView>
 
 class QByteArray;
 
 namespace Utils::ByteArray
 {
-    // Mimic QString::splitRef(sep, behavior)
-    QVector<QByteArray> splitToViews(const QByteArray &in, const QByteArray &sep, const QString::SplitBehavior behavior = QString::KeepEmptyParts);
+    // Inspired by QStringView(in).split(sep, behavior)
+    QList<QByteArrayView> splitToViews(QByteArrayView in, QByteArrayView sep, Qt::SplitBehavior behavior = Qt::SkipEmptyParts);
+    QByteArray asQByteArray(QByteArrayView view);
 
-    // Mimic QByteArray::mid(pos, len) but instead of returning a full-copy,
-    // we only return a partial view
-    const QByteArray midView(const QByteArray &in, int pos, int len = -1);
+    QByteArray toBase32(const QByteArray &in);
+
+    template <typename T>
+    T unquote(const T &arr, const QByteArrayView quotes = "\"")
+    {
+        if (arr.length() < 2)
+            return arr;
+
+        for (const char quote : quotes)
+        {
+            if (arr.startsWith(quote) && arr.endsWith(quote))
+                return arr.sliced(1, (arr.length() - 2));
+        }
+
+        return arr;
+    }
 }

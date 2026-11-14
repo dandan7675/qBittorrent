@@ -28,11 +28,15 @@
 
 #pragma once
 
+#include <QtTypes>
+#include <QByteArray>
 #include <QCoreApplication>
-#include <QtGlobal>
+#include <QDateTime>
+#include <QHash>
+#include <QVariant>
 
-class QByteArray;
-class QDateTime;
+#include "base/pathfwd.h"
+
 class QHostAddress;
 class QString;
 
@@ -40,13 +44,12 @@ struct DataFieldDescriptor;
 
 class GeoIPDatabase
 {
+    Q_DISABLE_COPY_MOVE(GeoIPDatabase)
     Q_DECLARE_TR_FUNCTIONS(GeoIPDatabase)
 
 public:
-    static GeoIPDatabase *load(const QString &filename, QString &error);
+    static GeoIPDatabase *load(const Path &filename, QString &error);
     static GeoIPDatabase *load(const QByteArray &data, QString &error);
-
-    ~GeoIPDatabase();
 
     QString type() const;
     quint16 ipVersion() const;
@@ -54,7 +57,7 @@ public:
     QString lookup(const QHostAddress &hostAddr) const;
 
 private:
-    explicit GeoIPDatabase(quint32 size);
+    GeoIPDatabase(const QByteArray &data);
 
     bool parseMetadata(const QVariantHash &metadata, QString &error);
     bool loadDB(QString &error) const;
@@ -66,36 +69,18 @@ private:
     QVariant readMapValue(quint32 &offset, quint32 count) const;
     QVariant readArrayValue(quint32 &offset, quint32 count) const;
 
-    template<typename T>
-    QVariant readPlainValue(quint32 &offset, quint8 len) const
-    {
-        T value = 0;
-        const uchar *const data = m_data + offset;
-        const quint32 availSize = m_size - offset;
-
-        if ((len > 0) && (len <= sizeof(T) && (availSize >= len)))
-        {
-            // copy input data to last 'len' bytes of 'value'
-            uchar *dst = reinterpret_cast<uchar *>(&value) + (sizeof(T) - len);
-            memcpy(dst, data, len);
-            fromBigEndian(reinterpret_cast<uchar *>(&value), sizeof(T));
-            offset += len;
-        }
-
-        return QVariant::fromValue(value);
-    }
+    template <typename T> QVariant readPlainValue(quint32 &offset, quint8 len) const;
 
     // Metadata
-    quint16 m_ipVersion;
-    quint16 m_recordSize;
-    quint32 m_nodeCount;
-    int m_nodeSize;
-    int m_indexSize;
-    int m_recordBytes;
+    quint16 m_ipVersion = 0;
+    quint16 m_recordSize = 0;
+    quint32 m_nodeCount = 0;
+    int m_nodeSize = 0;
+    int m_indexSize = 0;
+    int m_recordBytes = 0;
     QDateTime m_buildEpoch;
     QString m_dbType;
     // Search data
     mutable QHash<quint32, QString> m_countries;
-    quint32 m_size;
-    uchar *m_data;
+    const QByteArray m_data;
 };

@@ -31,10 +31,12 @@
 #include <cctype>
 
 #include <libtorrent/error_code.hpp>
+#include <libtorrent/version.hpp>
 
 #include <QDataStream>
 #include <QFile>
 
+#include "base/global.h"
 #include "base/logger.h"
 
 namespace
@@ -47,7 +49,7 @@ namespace
             unsigned char octetIndex = 0;
 
             const char *octetStart = str;
-            char *endptr;
+            char *endptr = nullptr;
             for (; *str; ++str)
             {
                 if (*str == '.')
@@ -71,7 +73,7 @@ namespace
             {
                 const long int extractedNum = strtol(octetStart, &endptr, 10);
                 if ((extractedNum >= 0L) && (extractedNum <= 255L))
-                    m_buf[octetIndex] = static_cast<unsigned char>(strtol(octetStart, &endptr, 10));
+                    m_buf[octetIndex] = static_cast<unsigned char>(extractedNum);
                 else
                     return false;
 
@@ -88,7 +90,7 @@ namespace
         }
 
     private:
-        lt::address_v4::bytes_type m_buf;
+        lt::address_v4::bytes_type m_buf {};
     };
 
     bool parseIPAddress(const char *data, lt::address &address)
@@ -110,7 +112,6 @@ namespace
 
 FilterParserThread::FilterParserThread(QObject *parent)
     : QThread(parent)
-    , m_abort(false)
 {
 }
 
@@ -124,7 +125,7 @@ FilterParserThread::~FilterParserThread()
 int FilterParserThread::parseDATFilterFile()
 {
     int ruleCount = 0;
-    QFile file(m_filePath);
+    QFile file {m_filePath.data()};
     if (!file.exists()) return ruleCount;
 
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
@@ -133,7 +134,7 @@ int FilterParserThread::parseDATFilterFile()
         return ruleCount;
     }
 
-    std::vector<char> buffer(BUFFER_SIZE, 0); // seems a bit faster than QVector
+    std::vector<char> buffer(BUFFER_SIZE, 0); // seems a bit faster than QList
     qint64 bytesRead = 0;
     int offset = 0;
     int start = 0;
@@ -193,7 +194,7 @@ int FilterParserThread::parseDATFilterFile()
 
             if ((buffer[start] == '#')
                 || ((buffer[start] == '/') && ((start + 1 < dataSize) && (buffer[start + 1] == '/'))))
-                {
+            {
                 start = endOfLine;
                 continue;
             }
@@ -251,9 +252,17 @@ int FilterParserThread::parseDATFilterFile()
 
             if ((startAddr.is_v4() != endAddr.is_v4())
                 || (startAddr.is_v6() != endAddr.is_v6()))
-                {
+            {
                 ++parseErrorCount;
                 addLog(tr("IP filter line %1 is malformed. One IP is IPv4 and the other is IPv6!").arg(nbLine));
+                start = endOfLine;
+                continue;
+            }
+
+            if (startAddr > endAddr)
+            {
+                ++parseErrorCount;
+                addLog(tr("IP filter line %1 is malformed. End IP is lower than Start IP!").arg(nbLine));
                 start = endOfLine;
                 continue;
             }
@@ -270,7 +279,11 @@ int FilterParserThread::parseDATFilterFile()
             {
                 ++parseErrorCount;
                 addLog(tr("IP filter exception thrown for line %1. Exception is: %2")
+#if LIBTORRENT_VERSION_NUM >= 20100
+                       .arg(nbLine).arg(QString::fromStdString(e.what())));
+#else
                        .arg(nbLine).arg(QString::fromLocal8Bit(e.what())));
+#endif
             }
         }
 
@@ -288,7 +301,7 @@ int FilterParserThread::parseDATFilterFile()
 int FilterParserThread::parseP2PFilterFile()
 {
     int ruleCount = 0;
-    QFile file(m_filePath);
+    QFile file {m_filePath.data()};
     if (!file.exists()) return ruleCount;
 
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
@@ -297,7 +310,7 @@ int FilterParserThread::parseP2PFilterFile()
         return ruleCount;
     }
 
-    std::vector<char> buffer(BUFFER_SIZE, 0); // seems a bit faster than QVector
+    std::vector<char> buffer(BUFFER_SIZE, 0); // seems a bit faster than QList
     qint64 bytesRead = 0;
     int offset = 0;
     int start = 0;
@@ -363,10 +376,11 @@ int FilterParserThread::parseP2PFilterFile()
             }
 
             // Each line should follow this format:
-            // Some organization:1.0.0.0-1.255.255.255
-            // The "Some organization" part might contain a ':' char itself so we find the last occurrence
-            const int partsDelimiter = findAndNullDelimiter(buffer.data(), ':', start, endOfLine, true);
-            if (partsDelimiter == -1)
+            // for IPv4: Some:Org:Label:1.0.0.0-1.255.255.255
+            // for IPv6: My:Company:Label:2001:db8::1-2001:db8::ff
+
+            const int delimIP = findAndNullDelimiter(buffer.data(), '-', start, endOfLine, true);
+            if (delimIP == -1)
             {
                 ++parseErrorCount;
                 addLog(tr("IP filter line %1 is malformed.").arg(nbLine));
@@ -374,9 +388,41 @@ int FilterParserThread::parseP2PFilterFile()
                 continue;
             }
 
-            // IP Range should be split by a dash
-            const int delimIP = findAndNullDelimiter(buffer.data(), '-', partsDelimiter + 1, endOfLine);
-            if (delimIP == -1)
+            lt::address wholeAddr;
+            const int wholeStart = trim(buffer.data(), start, (delimIP - 1));
+            if (parseIPAddress((buffer.data() + wholeStart), wholeAddr))
+            {
+                 ++parseErrorCount;
+                 addLog(tr("IP filter line %1 is malformed.").arg(nbLine));
+                 start = endOfLine;
+                 continue;
+            }
+
+            int partsDelimiter = -1;
+            int searchStart = start;
+
+            while (searchStart < delimIP)
+            {
+                const int nextColon = findAndNullDelimiter(buffer.data(), ':', searchStart, delimIP, false);
+                if (nextColon == -1)
+                    break;
+
+                lt::address testAddr;
+                const int testStart = trim(buffer.data(), (nextColon + 1), (delimIP - 1));
+
+                if (parseIPAddress((buffer.data() + testStart), testAddr))
+                {
+                    // We found valid IP
+                    partsDelimiter = nextColon;
+                    break;
+                }
+
+                // Cleanup for next iteration
+                buffer[nextColon] = ':';
+                searchStart = nextColon + 1;
+            }
+
+            if (partsDelimiter == -1)
             {
                 ++parseErrorCount;
                 addLog(tr("IP filter line %1 is malformed.").arg(nbLine));
@@ -406,7 +452,7 @@ int FilterParserThread::parseP2PFilterFile()
 
             if ((startAddr.is_v4() != endAddr.is_v4())
                 || (startAddr.is_v6() != endAddr.is_v6()))
-                {
+            {
                 ++parseErrorCount;
                 addLog(tr("IP filter line %1 is malformed. One IP is IPv4 and the other is IPv6!").arg(nbLine));
                 start = endOfLine;
@@ -424,7 +470,11 @@ int FilterParserThread::parseP2PFilterFile()
             {
                 ++parseErrorCount;
                 addLog(tr("IP filter exception thrown for line %1. Exception is: %2")
+#if LIBTORRENT_VERSION_NUM >= 20100
+                       .arg(nbLine).arg(QString::fromStdString(e.what())));
+#else
                        .arg(nbLine).arg(QString::fromLocal8Bit(e.what())));
+#endif
             }
         }
 
@@ -469,7 +519,7 @@ int FilterParserThread::getlineInStream(QDataStream &stream, std::string &name, 
 int FilterParserThread::parseP2BFilterFile()
 {
     int ruleCount = 0;
-    QFile file(m_filePath);
+    QFile file {m_filePath.data()};
     if (!file.exists()) return ruleCount;
 
     if (!file.open(QIODevice::ReadOnly))
@@ -483,9 +533,9 @@ int FilterParserThread::parseP2BFilterFile()
     char buf[7];
     unsigned char version;
     if (!stream.readRawData(buf, sizeof(buf))
-        || memcmp(buf, "\xFF\xFF\xFF\xFFP2B", 7)
+        || (memcmp(buf, "\xFF\xFF\xFF\xFFP2B", 7) != 0)
         || !stream.readRawData(reinterpret_cast<char*>(&version), sizeof(version)))
-        {
+    {
         LogMsg(tr("Parsing Error: The filter file is not a valid PeerGuardian P2B file."), Log::CRITICAL);
         return ruleCount;
     }
@@ -592,7 +642,7 @@ int FilterParserThread::parseP2BFilterFile()
 //  * eMule IP list (DAT): http://wiki.phoenixlabs.org/wiki/DAT_Format
 //  * PeerGuardian Text (P2P): http://wiki.phoenixlabs.org/wiki/P2P_Format
 //  * PeerGuardian Binary (P2B): http://wiki.phoenixlabs.org/wiki/P2B_Format
-void FilterParserThread::processFilterFile(const QString &filePath)
+void FilterParserThread::processFilterFile(const Path &filePath)
 {
     if (isRunning())
     {
@@ -617,17 +667,17 @@ void FilterParserThread::run()
 {
     qDebug("Processing filter file");
     int ruleCount = 0;
-    if (m_filePath.endsWith(".p2p", Qt::CaseInsensitive))
+    if (m_filePath.hasExtension(u".p2p"_s))
     {
         // PeerGuardian p2p file
         ruleCount = parseP2PFilterFile();
     }
-    else if (m_filePath.endsWith(".p2b", Qt::CaseInsensitive))
+    else if (m_filePath.hasExtension(u".p2b"_s))
     {
         // PeerGuardian p2b file
         ruleCount = parseP2BFilterFile();
     }
-    else if (m_filePath.endsWith(".dat", Qt::CaseInsensitive))
+    else if (m_filePath.hasExtension(u".dat"_s))
     {
         // eMule DAT format
         ruleCount = parseDATFilterFile();

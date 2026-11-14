@@ -28,28 +28,33 @@
 
 #pragma once
 
+#include <chrono>
+
 #include <QObject>
 
-class QtLocalPeer;
+#include "base/pathfwd.h"
 
-class ApplicationInstanceManager : public QObject
+using namespace std::chrono_literals;
+
+class LocalPeer;
+
+class ApplicationInstanceManager final : public QObject
 {
     Q_OBJECT
-    Q_DISABLE_COPY(ApplicationInstanceManager)
+    Q_DISABLE_COPY_MOVE(ApplicationInstanceManager)
 
 public:
-    explicit ApplicationInstanceManager(const QString &appId, QObject *parent = nullptr);
+    explicit ApplicationInstanceManager(const Path &instancePath, QObject *parent = nullptr);
 
     bool isFirstInstance() const;
-    QString appId() const;
 
 public slots:
-    bool sendMessage(const QString &message, int timeout = 5000);
+    bool sendMessage(const QString &message, std::chrono::milliseconds timeout = 5000ms);
 
 signals:
     void messageReceived(const QString &message);
 
 private:
-    QtLocalPeer *m_peer;
+    LocalPeer *m_peer = nullptr;
     const bool m_isFirstInstance;
 };

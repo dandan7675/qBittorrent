@@ -1,5 +1,6 @@
 /*
  * Bittorrent Client using Qt and libtorrent.
+ * Copyright (C) 2026  Vladimir Golovnev <glassez@yandex.ru>
  * Copyright (C) 2016 Eugene Shalygin
  *
  * This program is free software; you can redistribute it and/or
@@ -30,11 +31,13 @@
 
 #include <QWidget>
 
+#include "base/path.h"
+
 namespace Private
 {
     class FileComboEdit;
-    class FileEditorWithCompletion;
     class FileLineEdit;
+    class IFileEditorWithCompletion;
 }
 
 /*!
@@ -44,11 +47,14 @@ namespace Private
 class FileSystemPathEdit : public QWidget
 {
     Q_OBJECT
-    Q_ENUMS(Mode)
+    Q_DISABLE_COPY_MOVE(FileSystemPathEdit)
+
     Q_PROPERTY(Mode mode READ mode WRITE setMode)
-    Q_PROPERTY(QString selectedPath READ selectedPath WRITE setSelectedPath NOTIFY selectedPathChanged)
+    Q_PROPERTY(Path selectedPath READ selectedPath WRITE setSelectedPath NOTIFY selectedPathChanged)
     Q_PROPERTY(QString fileNameFilter READ fileNameFilter WRITE setFileNameFilter)
     Q_PROPERTY(QString dialogCaption READ dialogCaption WRITE setDialogCaption)
+
+    class FileSystemPathEditPrivate;
 
 public:
     ~FileSystemPathEdit() override;
@@ -58,18 +64,25 @@ public:
         FileOpen,        //!< opening files, shows open file dialog
         FileSave,        //!< saving files, shows save file dialog
         DirectoryOpen,   //!< selecting existing directories
-        DirectorySave    //!< selecting directories for saving
+        DirectorySave,   //!< selecting directories for saving
+        ReadOnly         //!< no browse button and no dialog, only validate path and check read permission
     };
+    Q_ENUM(Mode)
 
     Mode mode() const;
     void setMode(Mode mode);
 
-    QString currentDirectory() const;
-    QString selectedPath() const;
-    void setSelectedPath(const QString &val);
+    Path selectedPath() const;
+    void setSelectedPath(const Path &path);
+
+    Path basePath() const;
+    void setBasePath(const Path &basePath);
 
     QString fileNameFilter() const;
     void setFileNameFilter(const QString &val);
+
+    QString placeholder() const;
+    void setPlaceholder(const QString &val);
 
     /// The browse button caption is "..." if true, and "Browse" otherwise
     bool briefBrowseButtonCaption() const;
@@ -81,10 +94,10 @@ public:
     virtual void clear() = 0;
 
 signals:
-    void selectedPathChanged(const QString &path);
+    void selectedPathChanged(const Path &path);
 
 protected:
-    explicit FileSystemPathEdit(Private::FileEditorWithCompletion *editor, QWidget *parent);
+    explicit FileSystemPathEdit(Private::IFileEditorWithCompletion *editor, QWidget *parent);
 
     template <class Widget>
     Widget *editWidget() const
@@ -96,14 +109,18 @@ protected slots:
     void onPathEdited();
 
 private:
+    Q_DECLARE_PRIVATE(FileSystemPathEdit)
+
     virtual QString editWidgetText() const = 0;
     virtual void setEditWidgetText(const QString &text) = 0;
 
     QWidget *editWidgetImpl() const;
-    Q_DISABLE_COPY(FileSystemPathEdit)
-    class FileSystemPathEditPrivate;
-    Q_DECLARE_PRIVATE(FileSystemPathEdit)
-    FileSystemPathEditPrivate *d_ptr;
+    Path getResolvedPath() const;
+
+    FileSystemPathEditPrivate *d_ptr = nullptr;
+
+    Path m_path;
+    Path m_basePath;
 };
 
 /// Widget which uses QLineEdit for path editing
@@ -134,9 +151,9 @@ public:
     void clear() override;
 
     int count() const;
-    QString item(int index) const;
-    void addItem(const QString &text);
-    void insertItem(int index, const QString &text);
+    Path item(int index) const;
+    void addItem(const Path &path);
+    void insertItem(int index, const Path &path);
 
     int currentIndex() const;
     void setCurrentIndex(int index);

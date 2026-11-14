@@ -1,5 +1,6 @@
 /*
  * Bittorrent Client using Qt and libtorrent.
+ * Copyright (C) 2026  Vladimir Golovnev <glassez@yandex.ru>
  * Copyright (C) 2016  sledgehammer999 <hammered999@gmail.com>
  *
  * This program is free software; you can redistribute it and/or
@@ -32,15 +33,17 @@
 #include <QObject>
 #include <QTimer>
 
+#include "base/path.h"
+
 namespace Log
 {
     struct Msg;
 }
 
-class FileLogger : public QObject
+class FileLogger final : public QObject
 {
     Q_OBJECT
-    Q_DISABLE_COPY(FileLogger)
+    Q_DISABLE_COPY_MOVE(FileLogger)
 
 public:
     enum FileLogAgeType
@@ -50,10 +53,10 @@ public:
         YEARS
     };
 
-    FileLogger(const QString &path, bool backup, int maxSize, bool deleteOld, int age, FileLogAgeType ageType);
-    ~FileLogger();
+    FileLogger(const Path &path, bool backup, int maxSize, bool deleteOld, int age, FileLogAgeType ageType);
+    ~FileLogger() override;
 
-    void changePath(const QString &newPath);
+    void setPath(const Path &newPath);
     void deleteOld(int age, FileLogAgeType ageType);
     void setBackup(bool value);
     void setMaxSize(int value);
@@ -66,7 +69,7 @@ private:
     void openLogFile();
     void closeLogFile();
 
-    QString m_path;
+    Path m_logsFolderPath;
     bool m_backup;
     int m_maxSize;
     QFile m_logFile;

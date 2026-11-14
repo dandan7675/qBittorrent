@@ -30,8 +30,9 @@
 
 #include <objc/objc.h>
 
-#include <QSet>
+#include "base/pathfwd.h"
 
+class QMenu;
 class QPixmap;
 class QSize;
 class QString;
@@ -40,9 +41,17 @@ namespace MacUtils
 {
     QPixmap pixmapForExtension(const QString &ext, const QSize &size);
     void overrideDockClickHandler(bool (*dockClickHandler)(id, SEL, ...));
+    void askForNotificationPermission();
     void displayNotification(const QString &title, const QString &message);
-    void openFiles(const QSet<QString> &pathsList);
+    void openFiles(const PathList &pathList);
+
+    bool isMagnetLinkAssocSet();
+    void setMagnetLinkAssoc();
+    bool isTorrentFileAssocSet();
+    void setTorrentFileAssoc();
 
     QString badgeLabelText();
     void setBadgeLabelText(const QString &text);
+
+    void setupWindowMenu(QMenu *windowMenu);
 }

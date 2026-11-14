@@ -1,5 +1,6 @@
 /*
  * Bittorrent Client using Qt and libtorrent.
+ * Copyright (C) 2022-2026  Vladimir Golovnev <glassez@yandex.ru>
  * Copyright (C) 2006-2012  Christophe Dumez <chris@qbittorrent.org>
  *
  * This program is free software; you can redistribute it and/or
@@ -28,6 +29,7 @@
 
 #pragma once
 
+#include <QtContainerFwd>
 #include <QSortFilterProxyModel>
 
 #include "base/utils/compare.h"
@@ -38,29 +40,23 @@ class TorrentContentModel;
 class TorrentContentFilterModel final : public QSortFilterProxyModel
 {
     Q_OBJECT
+    Q_DISABLE_COPY_MOVE(TorrentContentFilterModel)
 
 public:
-    TorrentContentFilterModel(QObject *parent = nullptr);
+    explicit TorrentContentFilterModel(QObject *parent = nullptr);
 
-    TorrentContentModel *model() const;
+    void setSourceModel(TorrentContentModel *model);
     TorrentContentModelItem::ItemType itemType(const QModelIndex &index) const;
     int getFileIndex(const QModelIndex &index) const;
+    QSet<int> getFileIndexes(const QModelIndex &itemIndex) const;
     QModelIndex parent(const QModelIndex &child) const override;
 
-public slots:
-    void selectAll();
-    void selectNone();
-
-signals:
-    void filteredFilesChanged();
-
-protected:
+private:
+    using QSortFilterProxyModel::setSourceModel;
     bool filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const override;
     bool lessThan(const QModelIndex &left, const QModelIndex &right) const override;
-
-private:
     bool hasFiltered(const QModelIndex &folder) const;
 
-    TorrentContentModel *m_model;
+    TorrentContentModel *m_model = nullptr;
     Utils::Compare::NaturalLessThan<Qt::CaseInsensitive> m_naturalLessThan;
 };

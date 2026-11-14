@@ -30,63 +30,56 @@
 #pragma once
 
 #include <QtContainerFwd>
-#include <QVariant>
+#include <QtSystemDetection>
+#include <QObject>
 
+#include "base/net/smtpencryptiontype.h"
+#include "base/pathfwd.h"
 #include "base/utils/net.h"
 
 class QDateTime;
 class QNetworkCookie;
-class QSize;
 class QTime;
 
-enum SchedulerDays
+namespace Scheduler
 {
-    EVERY_DAY,
-    WEEK_DAYS,
-    WEEK_ENDS,
-    MON,
-    TUE,
-    WED,
-    THU,
-    FRI,
-    SAT,
-    SUN
-};
+    Q_NAMESPACE
 
-namespace TrayIcon
-{
-    enum Style
+    enum class Days : int
     {
-        NORMAL = 0,
-        MONO_DARK,
-        MONO_LIGHT
+        EveryDay = 0,
+        Weekday = 1,
+        Weekend = 2,
+        Monday = 3,
+        Tuesday = 4,
+        Wednesday = 5,
+        Thursday = 6,
+        Friday = 7,
+        Saturday = 8,
+        Sunday = 9
     };
+    Q_ENUM_NS(Days)
 }
 
 namespace DNS
 {
-    enum Service
+    Q_NAMESPACE
+
+    enum class Service : int
     {
-        DYNDNS,
-        NOIP,
-        NONE = -1
+        DynDNS = 0,
+        NoIP = 1,
+        None = -1
     };
+    Q_ENUM_NS(Service)
 }
 
-class Preferences : public QObject
+class Preferences final : public QObject
 {
     Q_OBJECT
-    Q_DISABLE_COPY(Preferences)
+    Q_DISABLE_COPY_MOVE(Preferences)
 
     Preferences();
-
-    const QVariant value(const QString &key, const QVariant &defaultValue = {}) const;
-    void setValue(const QString &key, const QVariant &value);
-
-    static Preferences *m_instance;
-
-signals:
-    void changed();
 
 public:
     static void initInstance();
@@ -98,44 +91,50 @@ public:
     void setLocale(const QString &locale);
     bool useCustomUITheme() const;
     void setUseCustomUITheme(bool use);
-    QString customUIThemePath() const;
-    void setCustomUIThemePath(const QString &path);
-    bool deleteTorrentFilesAsDefault() const;
-    void setDeleteTorrentFilesAsDefault(bool del);
+    Path customUIThemePath() const;
+    void setCustomUIThemePath(const Path &path);
+    bool removeTorrentContent() const;
+    void setRemoveTorrentContent(bool remove);
     bool confirmOnExit() const;
     void setConfirmOnExit(bool confirm);
     bool speedInTitleBar() const;
     void showSpeedInTitleBar(bool show);
     bool useAlternatingRowColors() const;
     void setAlternatingRowColors(bool b);
+    bool useTorrentStatesColors() const;
+    void setUseTorrentStatesColors(bool value);
+    bool getProgressBarFollowsTextColor() const;
+    void setProgressBarFollowsTextColor(bool value);
     bool getHideZeroValues() const;
     void setHideZeroValues(bool b);
     int getHideZeroComboValues() const;
     void setHideZeroComboValues(int n);
     bool isStatusbarDisplayed() const;
     void setStatusbarDisplayed(bool displayed);
+    bool isStatusbarFreeDiskSpaceDisplayed() const;
+    void setStatusbarFreeDiskSpaceDisplayed(bool displayed);
+    bool isStatusbarExternalIPDisplayed() const;
+    void setStatusbarExternalIPDisplayed(bool displayed);
     bool isToolbarDisplayed() const;
     void setToolbarDisplayed(bool displayed);
-    bool startMinimized() const;
-    void setStartMinimized(bool b);
+    bool isTorrentContentDragEnabled() const;
+    void setTorrentContentDragEnabled(bool enabled);
     bool isSplashScreenDisabled() const;
     void setSplashScreenDisabled(bool b);
     bool preventFromSuspendWhenDownloading() const;
     void setPreventFromSuspendWhenDownloading(bool b);
     bool preventFromSuspendWhenSeeding() const;
     void setPreventFromSuspendWhenSeeding(bool b);
+    QString getStyle() const;
+    void setStyle(const QString &styleName);
 #ifdef Q_OS_WIN
     bool WinStartup() const;
     void setWinStartup(bool b);
 #endif
 
     // Downloads
-    QString lastLocationPath() const;
-    void setLastLocationPath(const QString &path);
-    QVariantHash getScanDirs() const;
-    void setScanDirs(const QVariantHash &dirs);
-    QString getScanDirsLastPath() const;
-    void setScanDirsLastPath(const QString &path);
+    Path getScanDirsLastPath() const;
+    void setScanDirsLastPath(const Path &path);
     bool isMailNotificationEnabled() const;
     void setMailNotificationEnabled(bool enabled);
     QString getMailNotificationSender() const;
@@ -143,9 +142,9 @@ public:
     QString getMailNotificationEmail() const;
     void setMailNotificationEmail(const QString &mail);
     QString getMailNotificationSMTP() const;
-    void setMailNotificationSMTP(const QString &smtp_server);
-    bool getMailNotificationSMTPSSL() const;
-    void setMailNotificationSMTPSSL(bool use);
+    void setMailNotificationSMTP(const QString &smtpServer);
+    Net::SMTPEncryptionType getMailNotificationSMTPEncryptionType() const;
+    void setMailNotificationSMTPEncryptionType(Net::SMTPEncryptionType mailEncryptionType);
     bool getMailNotificationSMTPAuth() const;
     void setMailNotificationSMTPAuth(bool use);
     QString getMailNotificationSMTPUsername() const;
@@ -162,64 +161,78 @@ public:
     void setSchedulerStartTime(const QTime &time);
     QTime getSchedulerEndTime() const;
     void setSchedulerEndTime(const QTime &time);
-    SchedulerDays getSchedulerDays() const;
-    void setSchedulerDays(SchedulerDays days);
+    Scheduler::Days getSchedulerDays() const;
+    void setSchedulerDays(Scheduler::Days days);
 
     // Search
     bool isSearchEnabled() const;
     void setSearchEnabled(bool enabled);
 
+    // Search UI
+    int searchHistoryLength() const;
+    void setSearchHistoryLength(int length);
+    bool storeSearchJobs() const;
+    void setStoreSearchJobs(bool enabled);
+    bool storeSearchJobResults() const;
+    void setStoreSearchJobResults(bool enabled);
+    bool closeSearchTabWithMiddleClick() const;
+    void setCloseSearchTabWithMiddleClick(bool enabled);
+
     // HTTP Server
-    bool isWebUiEnabled() const;
-    void setWebUiEnabled(bool enabled);
+    bool isWebUIEnabled() const;
+    void setWebUIEnabled(bool enabled);
     QString getServerDomains() const;
     void setServerDomains(const QString &str);
-    QString getWebUiAddress() const;
-    void setWebUiAddress(const QString &addr);
-    quint16 getWebUiPort() const;
-    void setWebUiPort(quint16 port);
+    QString getWebUIAddress() const;
+    void setWebUIAddress(const QString &addr);
+    quint16 getWebUIPort() const;
+    void setWebUIPort(quint16 port);
     bool useUPnPForWebUIPort() const;
     void setUPnPForWebUIPort(bool enabled);
 
     // Authentication
-    bool isWebUiLocalAuthEnabled() const;
-    void setWebUiLocalAuthEnabled(bool enabled);
-    bool isWebUiAuthSubnetWhitelistEnabled() const;
-    void setWebUiAuthSubnetWhitelistEnabled(bool enabled);
-    QVector<Utils::Net::Subnet> getWebUiAuthSubnetWhitelist() const;
-    void setWebUiAuthSubnetWhitelist(QStringList subnets);
-    QString getWebUiUsername() const;
-    void setWebUiUsername(const QString &username);
+    bool isWebUILocalAuthEnabled() const;
+    void setWebUILocalAuthEnabled(bool enabled);
+    bool isWebUIAuthSubnetWhitelistEnabled() const;
+    void setWebUIAuthSubnetWhitelistEnabled(bool enabled);
+    QList<Utils::Net::Subnet> getWebUIAuthSubnetWhitelist() const;
+    void setWebUIAuthSubnetWhitelist(QStringList subnets);
+    QString getWebUIUsername() const;
+    void setWebUIUsername(const QString &username);
     QByteArray getWebUIPassword() const;
     void setWebUIPassword(const QByteArray &password);
+    QString getWebUIApiKey() const;
+    void setWebUIApiKey(const QString &apiKey);
     int getWebUIMaxAuthFailCount() const;
     void setWebUIMaxAuthFailCount(int count);
     std::chrono::seconds getWebUIBanDuration() const;
     void setWebUIBanDuration(std::chrono::seconds duration);
     int getWebUISessionTimeout() const;
     void setWebUISessionTimeout(int timeout);
+    int getWebUISessionsCountLimit() const;
+    void setWebUISessionsCountLimit(int limit);
 
     // WebUI security
-    bool isWebUiClickjackingProtectionEnabled() const;
-    void setWebUiClickjackingProtectionEnabled(bool enabled);
-    bool isWebUiCSRFProtectionEnabled() const;
-    void setWebUiCSRFProtectionEnabled(bool enabled);
-    bool isWebUiSecureCookieEnabled () const;
-    void setWebUiSecureCookieEnabled(bool enabled);
+    bool isWebUIClickjackingProtectionEnabled() const;
+    void setWebUIClickjackingProtectionEnabled(bool enabled);
+    bool isWebUICSRFProtectionEnabled() const;
+    void setWebUICSRFProtectionEnabled(bool enabled);
+    bool isWebUISecureCookieEnabled () const;
+    void setWebUISecureCookieEnabled(bool enabled);
     bool isWebUIHostHeaderValidationEnabled() const;
     void setWebUIHostHeaderValidationEnabled(bool enabled);
 
     // HTTPS
-    bool isWebUiHttpsEnabled() const;
-    void setWebUiHttpsEnabled(bool enabled);
-    QString getWebUIHttpsCertificatePath() const;
-    void setWebUIHttpsCertificatePath(const QString &path);
-    QString getWebUIHttpsKeyPath() const;
-    void setWebUIHttpsKeyPath(const QString &path);
-    bool isAltWebUiEnabled() const;
-    void setAltWebUiEnabled(bool enabled);
-    QString getWebUiRootFolder() const;
-    void setWebUiRootFolder(const QString &path);
+    bool isWebUIHttpsEnabled() const;
+    void setWebUIHttpsEnabled(bool enabled);
+    Path getWebUIHttpsCertificatePath() const;
+    void setWebUIHttpsCertificatePath(const Path &path);
+    Path getWebUIHttpsKeyPath() const;
+    void setWebUIHttpsKeyPath(const Path &path);
+    bool isAltWebUIEnabled() const;
+    void setAltWebUIEnabled(bool enabled);
+    Path getWebUIRootFolder() const;
+    void setWebUIRootFolder(const Path &path);
 
     // WebUI custom HTTP headers
     bool isWebUICustomHTTPHeadersEnabled() const;
@@ -227,11 +240,17 @@ public:
     QString getWebUICustomHTTPHeaders() const;
     void setWebUICustomHTTPHeaders(const QString &headers);
 
+    // Reverse proxy
+    bool isWebUIReverseProxySupportEnabled() const;
+    void setWebUIReverseProxySupportEnabled(bool enabled);
+    QString getWebUITrustedReverseProxiesList() const;
+    void setWebUITrustedReverseProxiesList(const QString &addr);
+
     // Dynamic DNS
     bool isDynDNSEnabled() const;
     void setDynDNSEnabled(bool enabled);
     DNS::Service getDynDNSService() const;
-    void setDynDNSService(int service);
+    void setDynDNSService(DNS::Service service);
     QString getDynDomainName() const;
     void setDynDomainName(const QString &name);
     QString getDynDNSUsername() const;
@@ -244,16 +263,24 @@ public:
     void setUILockPassword(const QByteArray &password);
     bool isUILocked() const;
     void setUILocked(bool locked);
-    bool isAutoRunEnabled() const;
-    void setAutoRunEnabled(bool enabled);
-    QString getAutoRunProgram() const;
-    void setAutoRunProgram(const QString &program);
+
+    bool isAutoRunOnTorrentAddedEnabled() const;
+    void setAutoRunOnTorrentAddedEnabled(bool enabled);
+    QString getAutoRunOnTorrentAddedProgram() const;
+    void setAutoRunOnTorrentAddedProgram(const QString &program);
+    bool isAutoRunOnTorrentFinishedEnabled() const;
+    void setAutoRunOnTorrentFinishedEnabled(bool enabled);
+    QString getAutoRunOnTorrentFinishedProgram() const;
+    void setAutoRunOnTorrentFinishedProgram(const QString &program);
 #if defined(Q_OS_WIN)
     bool isAutoRunConsoleEnabled() const;
     void setAutoRunConsoleEnabled(bool enabled);
 #endif
+
     bool shutdownWhenDownloadsComplete() const;
     void setShutdownWhenDownloadsComplete(bool shutdown);
+    bool rebootWhenDownloadsComplete() const;
+    void setRebootWhenDownloadsComplete(bool reboot);
     bool suspendWhenDownloadsComplete() const;
     void setSuspendWhenDownloadsComplete(bool suspend);
     bool hibernateWhenDownloadsComplete() const;
@@ -269,30 +296,30 @@ public:
     bool resolvePeerHostNames() const;
     void resolvePeerHostNames(bool resolve);
 #if (defined(Q_OS_UNIX) && !defined(Q_OS_MACOS))
-    bool useSystemIconTheme() const;
-    void useSystemIconTheme(bool enabled);
+    bool useSystemIcons() const;
+    void useSystemIcons(bool enabled);
 #endif
-    bool recursiveDownloadDisabled() const;
-    void disableRecursiveDownload(bool disable = true);
-#ifdef Q_OS_WIN
-    bool neverCheckFileAssoc() const;
-    void setNeverCheckFileAssoc(bool check = true);
-    static bool isTorrentFileAssocSet();
-    static bool isMagnetLinkAssocSet();
-    static void setTorrentFileAssoc(bool set);
-    static void setMagnetLinkAssoc(bool set);
-#endif
-#ifdef Q_OS_MACOS
-    static bool isTorrentFileAssocSet();
-    static bool isMagnetLinkAssocSet();
-    static void setTorrentFileAssoc();
-    static void setMagnetLinkAssoc();
-#endif
+    bool isRecursiveDownloadEnabled() const;
+    void setRecursiveDownloadEnabled(bool enable);
     int getTrackerPort() const;
     void setTrackerPort(int port);
+    bool isTrackerPortForwardingEnabled() const;
+    void setTrackerPortForwardingEnabled(bool enabled);
+    bool isMarkOfTheWebEnabled() const;
+    void setMarkOfTheWebEnabled(bool enabled);
+    bool isIgnoreSSLErrors() const;
+    void setIgnoreSSLErrors(bool enabled);
+    Path getPythonExecutablePath() const;
+    void setPythonExecutablePath(const Path &path);
 #if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
     bool isUpdateCheckEnabled() const;
     void setUpdateCheckEnabled(bool enabled);
+#endif
+#ifdef Q_OS_MACOS
+    bool isSpeedInDockEnabled() const;
+    void setSpeedInDockEnabled(bool enabled);
+    bool isMacOSMenuBarIconEnabled() const;
+    void setMacOSMenuBarIconEnabled(bool enabled);
 #endif
     bool confirmTorrentDeletion() const;
     void setConfirmTorrentDeletion(bool enabled);
@@ -300,9 +327,13 @@ public:
     void setConfirmTorrentRecheck(bool enabled);
     bool confirmRemoveAllTags() const;
     void setConfirmRemoveAllTags(bool enabled);
+    bool confirmMergeTrackers() const;
+    void setConfirmMergeTrackers(bool enabled);
+    bool confirmRemoveTrackerFromAllTorrents() const;
+    void setConfirmRemoveTrackerFromAllTorrents(bool enabled);
 #ifndef Q_OS_MACOS
-    bool systrayIntegration() const;
-    void setSystrayIntegration(bool enabled);
+    bool systemTrayEnabled() const;
+    void setSystemTrayEnabled(bool enabled);
     bool minimizeToTrayNotified() const;
     void setMinimizeToTrayNotified(bool b);
     bool minimizeToTray() const;
@@ -311,11 +342,17 @@ public:
     void setCloseToTray(bool b);
     bool closeToTrayNotified() const;
     void setCloseToTrayNotified(bool b);
-    TrayIcon::Style trayIconStyle() const;
-    void setTrayIconStyle(TrayIcon::Style style);
     bool iconsInMenusEnabled() const;
     void setIconsInMenusEnabled(bool enable);
 #endif // Q_OS_MACOS
+    qint64 getTorrentFileSizeLimit() const;
+    void setTorrentFileSizeLimit(qint64 value);
+    int getBdecodeDepthLimit() const;
+    void setBdecodeDepthLimit(int value);
+    int getBdecodeTokenLimit() const;
+    void setBdecodeTokenLimit(int value);
+    int getLoadTorrentMaxDirectoryDepth() const;
+    void setLoadTorrentMaxDirectoryDepth(int value);
 
     // Stuff that don't appear in the Options GUI but are saved
     // in the same file.
@@ -323,14 +360,14 @@ public:
     void setDNSLastUpd(const QDateTime &date);
     QString getDNSLastIP() const;
     void setDNSLastIP(const QString &ip);
-    bool getAcceptedLegal() const;
-    void setAcceptedLegal(bool accepted);
     QByteArray getMainGeometry() const;
     void setMainGeometry(const QByteArray &geometry);
-    QByteArray getMainVSplitterState() const;
-    void setMainVSplitterState(const QByteArray &state);
-    QString getMainLastDir() const;
-    void setMainLastDir(const QString &path);
+    bool isFiltersSidebarVisible() const;
+    void setFiltersSidebarVisible(bool value);
+    int getFiltersSidebarWidth() const;
+    void setFiltersSidebarWidth(int value);
+    Path getMainLastDir() const;
+    void setMainLastDir(const Path &path);
     QByteArray getPeerListState() const;
     void setPeerListState(const QByteArray &state);
     QString getPropSplitterSizes() const;
@@ -341,14 +378,12 @@ public:
     void setPropCurTab(int tab);
     bool getPropVisible() const;
     void setPropVisible(bool visible);
-    QByteArray getPropTrackerListState() const;
-    void setPropTrackerListState(const QByteArray &state);
-    QSize getRssGeometrySize() const;
-    void setRssGeometrySize(const QSize &geometry);
-    QByteArray getRssHSplitterSizes() const;
-    void setRssHSplitterSizes(const QByteArray &sizes);
+    QByteArray getTrackerListState() const;
+    void setTrackerListState(const QByteArray &state);
     QStringList getRssOpenFolders() const;
     void setRssOpenFolders(const QStringList &folders);
+    QByteArray getRssFeedListState() const;
+    void setRssFeedListState(const QByteArray &state);
     QByteArray getRssSideSplitterState() const;
     void setRssSideSplitterState(const QByteArray &state);
     QByteArray getRssMainSplitterState() const;
@@ -367,8 +402,13 @@ public:
     bool getCategoryFilterState() const;
     bool getTagFilterState() const;
     bool getTrackerFilterState() const;
+    bool getTrackerStatusFilterState() const;
+    bool useSeparateTrackerStatusFilter() const;
+    void setUseSeparateTrackerStatusFilter(bool value);
     int getTransSelFilter() const;
     void setTransSelFilter(int index);
+    bool getHideZeroStatusFilters() const;
+    void setHideZeroStatusFilters(bool hide);
     QByteArray getTransHeaderState() const;
     void setTransHeaderState(const QByteArray &state);
     bool getRegexAsFilteringPatternForTransferList() const;
@@ -384,6 +424,13 @@ public:
     QList<QNetworkCookie> getNetworkCookies() const;
     void setNetworkCookies(const QList<QNetworkCookie> &cookies);
 
+    bool useProxyForBT() const;
+    void setUseProxyForBT(bool value);
+    bool useProxyForRSS() const;
+    void setUseProxyForRSS(bool value);
+    bool useProxyForGeneralPurposes() const;
+    void setUseProxyForGeneralPurposes(bool value);
+
     // SpeedWidget
     bool isSpeedWidgetEnabled() const;
     void setSpeedWidgetEnabled(bool enabled);
@@ -392,11 +439,28 @@ public:
     bool getSpeedWidgetGraphEnable(int id) const;
     void setSpeedWidgetGraphEnable(int id, bool enable);
 
+    // AddNewTorrentDialog
+    bool isAddNewTorrentDialogEnabled() const;
+    void setAddNewTorrentDialogEnabled(bool value);
+    bool isAddNewTorrentDialogTopLevel() const;
+    void setAddNewTorrentDialogTopLevel(bool value);
+    int addNewTorrentDialogSavePathHistoryLength() const;
+    void setAddNewTorrentDialogSavePathHistoryLength(int value);
+    bool isAddNewTorrentDialogAttached() const;
+    void setAddNewTorrentDialogAttached(bool attached);
+
 public slots:
     void setStatusFilterState(bool checked);
     void setCategoryFilterState(bool checked);
     void setTagFilterState(bool checked);
     void setTrackerFilterState(bool checked);
+    void setTrackerStatusFilterState(bool checked);
 
     void apply();
+
+signals:
+    void changed();
+
+private:
+    static Preferences *m_instance;
 };

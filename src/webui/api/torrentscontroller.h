@@ -1,6 +1,6 @@
 /*
  * Bittorrent Client using Qt and libtorrent.
- * Copyright (C) 2018  Vladimir Golovnev <glassez@yandex.ru>
+ * Copyright (C) 2018-2026  Vladimir Golovnev <glassez@yandex.ru>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -28,35 +28,60 @@
 
 #pragma once
 
+#include <QHash>
+#include <QSet>
+
+#include "base/bittorrent/torrentdescriptor.h"
 #include "apicontroller.h"
+
+class QByteArray;
+
+namespace BitTorrent
+{
+    class InfoHash;
+    class TorrentID;
+    class TorrentInfo;
+}
+
+namespace Net
+{
+    struct DownloadResult;
+}
 
 class TorrentsController : public APIController
 {
     Q_OBJECT
-    Q_DISABLE_COPY(TorrentsController)
+    Q_DISABLE_COPY_MOVE(TorrentsController)
 
 public:
-    using APIController::APIController;
+    explicit TorrentsController(IApplication *app, QObject *parent = nullptr);
 
 private slots:
+    void countAction();
     void infoAction();
     void propertiesAction();
     void trackersAction();
     void webseedsAction();
+    void addWebSeedsAction();
+    void editWebSeedAction();
+    void removeWebSeedsAction();
     void filesAction();
     void pieceHashesAction();
     void pieceStatesAction();
-    void resumeAction();
-    void pauseAction();
+    void pieceAvailabilityAction();
+    void startAction();
+    void stopAction();
     void recheckAction();
     void reannounceAction();
     void renameAction();
+    void setCommentAction();
     void setCategoryAction();
     void createCategoryAction();
     void editCategoryAction();
     void removeCategoriesAction();
     void categoriesAction();
     void addTagsAction();
+    void setTagsAction();
     void removeTagsAction();
     void createTagsAction();
     void deleteTagsAction();
@@ -78,6 +103,8 @@ private slots:
     void topPrioAction();
     void bottomPrioAction();
     void setLocationAction();
+    void setSavePathAction();
+    void setDownloadPathAction();
     void setAutoManagementAction();
     void setSuperSeedingAction();
     void setForceStartAction();
@@ -85,4 +112,25 @@ private slots:
     void toggleFirstLastPiecePrioAction();
     void renameFileAction();
     void renameFolderAction();
+    void exportAction();
+    void SSLParametersAction();
+    void setSSLParametersAction();
+    void fetchMetadataAction();
+    void cancelFetchMetadataAction();
+    void parseMetadataAction();
+    void saveMetadataAction();
+    void downloadFileAction();
+
+private:
+    void onDownloadFinished(const Net::DownloadResult &result);
+    void onMetadataDownloaded(const BitTorrent::TorrentInfo &info);
+    void onSearchPluginTorrentDownloaded(const QString &source, const QString &data);
+    void cacheTorrentFile(const QString &source, const QByteArray &data);
+    void cacheMagnetURI(const QString &source, const BitTorrent::TorrentDescriptor &torrentDescr);
+
+    QHash<QString, BitTorrent::InfoHash> m_torrentSourceCache;
+    QHash<BitTorrent::TorrentID, BitTorrent::TorrentDescriptor> m_torrentMetadataCache;
+    QSet<QString> m_requestedTorrentSource;
+    QSet<QString> m_cancelledTorrentSource;
+    QSet<QString> m_invalidTorrentSource;
 };

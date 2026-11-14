@@ -1,6 +1,7 @@
 /*
  * Bittorrent Client using Qt and libtorrent.
- * Copyright (C) 2018  Thomas Piccirello <thomas.piccirello@gmail.com>
+ * Copyright (C) 2024  Vladimir Golovnev <glassez@yandex.ru>
+ * Copyright (C) 2018  Thomas Piccirello <thomas@piccirello.com>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -36,16 +37,16 @@
 class QJsonArray;
 class QJsonObject;
 
-struct ISession;
+class SearchJobManager;
 struct SearchResult;
 
 class SearchController : public APIController
 {
     Q_OBJECT
-    Q_DISABLE_COPY(SearchController)
+    Q_DISABLE_COPY_MOVE(SearchController)
 
 public:
-    using APIController::APIController;
+    SearchController(SearchJobManager *searchJobManager, IApplication *app, QObject *parent = nullptr);
 
 private slots:
     void startAction();
@@ -53,6 +54,7 @@ private slots:
     void statusAction();
     void resultsAction();
     void deleteAction();
+    void downloadTorrentAction();
     void pluginsAction();
     void installPluginAction();
     void uninstallPluginAction();
@@ -60,13 +62,10 @@ private slots:
     void updatePluginsAction();
 
 private:
-    const int MAX_CONCURRENT_SEARCHES = 5;
-
-    void checkForUpdatesFinished(const QHash<QString, PluginVersion> &updateInfo);
+    void checkForUpdatesFinished(const QHash<QString, SearchPluginVersion> &updateInfo);
     void checkForUpdatesFailed(const QString &reason);
-    void searchFinished(ISession *session, int id);
-    void searchFailed(ISession *session, int id);
-    int generateSearchId() const;
     QJsonObject getResults(const QList<SearchResult> &searchResults, bool isSearchActive, int totalResults) const;
     QJsonArray getPluginsInfo(const QStringList &plugins) const;
+
+    SearchJobManager *m_searchJobManager = nullptr;
 };

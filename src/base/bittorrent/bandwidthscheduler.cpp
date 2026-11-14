@@ -29,17 +29,49 @@
 
 #include "bandwidthscheduler.h"
 
-#include <utility>
+#include <chrono>
 
 #include <QDate>
 #include <QTime>
-#include <QTimer>
 
 #include "base/preferences.h"
 
+using namespace std::chrono_literals;
+
+namespace
+{
+    bool isScheduledDay(const Scheduler::Days schedulerDays, const int day)
+    {
+        switch (schedulerDays)
+        {
+        case Scheduler::Days::EveryDay:
+            return true;
+        case Scheduler::Days::Monday:
+            return day == 1;
+        case Scheduler::Days::Tuesday:
+            return day == 2;
+        case Scheduler::Days::Wednesday:
+            return day == 3;
+        case Scheduler::Days::Thursday:
+            return day == 4;
+        case Scheduler::Days::Friday:
+            return day == 5;
+        case Scheduler::Days::Saturday:
+            return day == 6;
+        case Scheduler::Days::Sunday:
+            return day == 7;
+        case Scheduler::Days::Weekday:
+            return ((day >= 1) && (day <= 5));
+        case Scheduler::Days::Weekend:
+            return ((day == 6) || (day == 7));
+        }
+
+        Q_UNREACHABLE_RETURN(false);
+    }
+}
+
 BandwidthScheduler::BandwidthScheduler(QObject *parent)
     : QObject(parent)
-    , m_lastAlternative(false)
 {
     connect(&m_timer, &QTimer::timeout, this, &BandwidthScheduler::onTimeout);
 }
@@ -51,48 +83,33 @@ void BandwidthScheduler::start()
 
     // Timeout regularly to accommodate for external system clock changes
     // eg from the user or from a timesync utility
-    m_timer.start(30000);
+    m_timer.start(30s);
+}
+
+bool BandwidthScheduler::isAlternativeRequested() const
+{
+    return m_lastAlternative;
 }
 
 bool BandwidthScheduler::isTimeForAlternative() const
 {
     const Preferences *const pref = Preferences::instance();
 
-    QTime start = pref->getSchedulerStartTime();
-    QTime end = pref->getSchedulerEndTime();
+    const QTime start = pref->getSchedulerStartTime();
+    const QTime end = pref->getSchedulerEndTime();
     const QTime now = QTime::currentTime();
-    const int schedulerDays = pref->getSchedulerDays();
-    const int day = QDate::currentDate().dayOfWeek();
-    bool alternative = false;
+    const Scheduler::Days schedulerDays = pref->getSchedulerDays();
+    const QDate today = QDate::currentDate();
 
-    if (start > end)
-    {
-        std::swap(start, end);
-        alternative = true;
-    }
+    if (start <= end)
+        return (start <= now) && (now <= end) && isScheduledDay(schedulerDays, today.dayOfWeek());
 
-    if ((start <= now) && (end >= now))
-    {
-        switch (schedulerDays)
-        {
-        case EVERY_DAY:
-            alternative = !alternative;
-            break;
-        case WEEK_ENDS:
-            if ((day == 6) || (day == 7))
-                alternative = !alternative;
-            break;
-        case WEEK_DAYS:
-            if ((day != 6) && (day != 7))
-                alternative = !alternative;
-            break;
-        default:
-            if (day == (schedulerDays - 2))
-                alternative = !alternative;
-        }
-    }
-
-    return alternative;
+    // The period crosses midnight, so it belongs to the day it starts on
+    if (now >= start)
+        return isScheduledDay(schedulerDays, today.dayOfWeek());
+    if (now <= end)
+        return isScheduledDay(schedulerDays, today.addDays(-1).dayOfWeek());
+    return false;
 }
 
 void BandwidthScheduler::onTimeout()

@@ -1,6 +1,6 @@
 /*
  * Bittorrent Client using Qt and libtorrent.
- * Copyright (C) 2020  Vladimir Golovnev <glassez@yandex.ru>
+ * Copyright (C) 2020-2025  Vladimir Golovnev <glassez@yandex.ru>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -28,42 +28,51 @@
 
 #include "filesearcher.h"
 
-#include <QDir>
+#include <QPromise>
 
 #include "base/bittorrent/common.h"
-#include "base/bittorrent/infohash.h"
 
-void FileSearcher::search(const BitTorrent::TorrentID &id, const QStringList &originalFileNames
-                          , const QString &completeSavePath, const QString &incompleteSavePath)
+namespace
 {
-    const auto findInDir = [](const QString &dirPath, QStringList &fileNames) -> bool
+    bool findInDir(const Path &dirPath, PathList &fileNames, const bool forceAppendExt)
     {
-        const QDir dir {dirPath};
         bool found = false;
-        for (QString &fileName : fileNames)
+        for (Path &fileName : fileNames)
         {
-            if (dir.exists(fileName))
+            if ((dirPath / fileName).exists())
             {
                 found = true;
             }
-            else if (dir.exists(fileName + QB_EXT))
+            else
             {
-                found = true;
-                fileName += QB_EXT;
+                const Path incompleteFilename = fileName + QB_EXT;
+                if ((dirPath / incompleteFilename).exists())
+                {
+                    found = true;
+                    fileName = incompleteFilename;
+                }
+                else if (forceAppendExt)
+                {
+                    fileName = incompleteFilename;
+                }
             }
         }
 
         return found;
-    };
+    }
+}
 
-    QString savePath = completeSavePath;
-    QStringList adjustedFileNames = originalFileNames;
-    const bool found = findInDir(savePath, adjustedFileNames);
-    if (!found && !incompleteSavePath.isEmpty())
+void FileSearcher::search(const PathList &originalFileNames, const Path &savePath
+        , const Path &downloadPath, const bool forceAppendExt, QPromise<FileSearchResult> &promise)
+{
+    Path usedPath = savePath;
+    PathList adjustedFileNames = originalFileNames;
+    const bool found = findInDir(usedPath, adjustedFileNames, (forceAppendExt && downloadPath.isEmpty()));
+    if (!found && !downloadPath.isEmpty())
     {
-        savePath = incompleteSavePath;
-        findInDir(savePath, adjustedFileNames);
+        usedPath = downloadPath;
+        findInDir(usedPath, adjustedFileNames, forceAppendExt);
     }
 
-    emit searchFinished(id, savePath, adjustedFileNames);
+    promise.addResult(FileSearchResult {.savePath = usedPath, .fileNames = adjustedFileNames});
 }

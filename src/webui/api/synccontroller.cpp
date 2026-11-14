@@ -1,6 +1,6 @@
 /*
  * Bittorrent Client using Qt and libtorrent.
- * Copyright (C) 2018  Vladimir Golovnev <glassez@yandex.ru>
+ * Copyright (C) 2018-2026  Vladimir Golovnev <glassez@yandex.ru>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -28,89 +28,131 @@
 
 #include "synccontroller.h"
 
-#include <algorithm>
-
+#include <QFuture>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QMetaObject>
-#include <QThread>
 
+#include "base/algorithm.h"
+#include "base/bittorrent/cachestatus.h"
 #include "base/bittorrent/infohash.h"
 #include "base/bittorrent/peeraddress.h"
 #include "base/bittorrent/peerinfo.h"
 #include "base/bittorrent/session.h"
+#include "base/bittorrent/sessionstatus.h"
 #include "base/bittorrent/torrent.h"
-#include "base/bittorrent/trackerentry.h"
+#include "base/bittorrent/torrentinfo.h"
+#include "base/bittorrent/trackerentrystatus.h"
 #include "base/global.h"
 #include "base/net/geoipmanager.h"
+#include "base/net/reverseresolution.h"
 #include "base/preferences.h"
+#include "base/utils/dict.h"
 #include "base/utils/string.h"
 #include "apierror.h"
-#include "freediskspacechecker.h"
-#include "isessionmanager.h"
 #include "serialize/serialize_torrent.h"
 
 namespace
 {
-    const int FREEDISKSPACE_CHECK_TIMEOUT = 30000;
-
     // Sync main data keys
-    const char KEY_SYNC_MAINDATA_QUEUEING[] = "queueing";
-    const char KEY_SYNC_MAINDATA_REFRESH_INTERVAL[] = "refresh_interval";
-    const char KEY_SYNC_MAINDATA_USE_ALT_SPEED_LIMITS[] = "use_alt_speed_limits";
+    const QString KEY_SYNC_MAINDATA_QUEUEING = u"queueing"_s;
+    const QString KEY_SYNC_MAINDATA_REFRESH_INTERVAL = u"refresh_interval"_s;
+    const QString KEY_SYNC_MAINDATA_SESSION_STATE = u"session_state"_s;
+    const QString KEY_SYNC_MAINDATA_USE_ALT_SPEED_LIMITS = u"use_alt_speed_limits"_s;
 
     // Sync torrent peers keys
-    const char KEY_SYNC_TORRENT_PEERS_SHOW_FLAGS[] = "show_flags";
+    const QString KEY_SYNC_TORRENT_PEERS_SHOW_FLAGS = u"show_flags"_s;
 
     // Peer keys
-    const char KEY_PEER_CLIENT[] = "client";
-    const char KEY_PEER_CONNECTION_TYPE[] = "connection";
-    const char KEY_PEER_COUNTRY[] = "country";
-    const char KEY_PEER_COUNTRY_CODE[] = "country_code";
-    const char KEY_PEER_DOWN_SPEED[] = "dl_speed";
-    const char KEY_PEER_FILES[] = "files";
-    const char KEY_PEER_FLAGS[] = "flags";
-    const char KEY_PEER_FLAGS_DESCRIPTION[] = "flags_desc";
-    const char KEY_PEER_IP[] = "ip";
-    const char KEY_PEER_PORT[] = "port";
-    const char KEY_PEER_PROGRESS[] = "progress";
-    const char KEY_PEER_RELEVANCE[] = "relevance";
-    const char KEY_PEER_TOT_DOWN[] = "downloaded";
-    const char KEY_PEER_TOT_UP[] = "uploaded";
-    const char KEY_PEER_UP_SPEED[] = "up_speed";
+    const QString KEY_PEER_CLIENT = u"client"_s;
+    const QString KEY_PEER_ID_CLIENT = u"peer_id_client"_s;
+    const QString KEY_PEER_CONNECTION_TYPE = u"connection"_s;
+    const QString KEY_PEER_COUNTRY = u"country"_s;
+    const QString KEY_PEER_COUNTRY_CODE = u"country_code"_s;
+    const QString KEY_PEER_DOWN_SPEED = u"dl_speed"_s;
+    const QString KEY_PEER_FILES = u"files"_s;
+    const QString KEY_PEER_FLAGS = u"flags"_s;
+    const QString KEY_PEER_FLAGS_DESCRIPTION = u"flags_desc"_s;
+    const QString KEY_PEER_HOST_NAME = u"host_name"_s;
+    const QString KEY_PEER_IP = u"ip"_s;
+    const QString KEY_PEER_I2P_DEST = u"i2p_dest"_s;
+    const QString KEY_PEER_PORT = u"port"_s;
+    const QString KEY_PEER_PROGRESS = u"progress"_s;
+    const QString KEY_PEER_RELEVANCE = u"relevance"_s;
+    const QString KEY_PEER_CONTRIBUTION = u"contribution"_s;
+    const QString KEY_PEER_TOT_DOWN = u"downloaded"_s;
+    const QString KEY_PEER_TOT_UP = u"uploaded"_s;
+    const QString KEY_PEER_UP_SPEED = u"up_speed"_s;
 
     // TransferInfo keys
-    const char KEY_TRANSFER_CONNECTION_STATUS[] = "connection_status";
-    const char KEY_TRANSFER_DHT_NODES[] = "dht_nodes";
-    const char KEY_TRANSFER_DLDATA[] = "dl_info_data";
-    const char KEY_TRANSFER_DLRATELIMIT[] = "dl_rate_limit";
-    const char KEY_TRANSFER_DLSPEED[] = "dl_info_speed";
-    const char KEY_TRANSFER_FREESPACEONDISK[] = "free_space_on_disk";
-    const char KEY_TRANSFER_UPDATA[] = "up_info_data";
-    const char KEY_TRANSFER_UPRATELIMIT[] = "up_rate_limit";
-    const char KEY_TRANSFER_UPSPEED[] = "up_info_speed";
+    const QString KEY_TRANSFER_CONNECTION_STATUS = u"connection_status"_s;
+    const QString KEY_TRANSFER_DHT_NODES = u"dht_nodes"_s;
+    const QString KEY_TRANSFER_DLDATA = u"dl_info_data"_s;
+    const QString KEY_TRANSFER_DLRATELIMIT = u"dl_rate_limit"_s;
+    const QString KEY_TRANSFER_DLSPEED = u"dl_info_speed"_s;
+    const QString KEY_TRANSFER_FREESPACEONDISK = u"free_space_on_disk"_s;
+    const QString KEY_TRANSFER_LAST_EXTERNAL_ADDRESS_V4 = u"last_external_address_v4"_s;
+    const QString KEY_TRANSFER_LAST_EXTERNAL_ADDRESS_V6 = u"last_external_address_v6"_s;
+    const QString KEY_TRANSFER_UPDATA = u"up_info_data"_s;
+    const QString KEY_TRANSFER_UPRATELIMIT = u"up_rate_limit"_s;
+    const QString KEY_TRANSFER_UPSPEED = u"up_info_speed"_s;
 
     // Statistics keys
-    const char KEY_TRANSFER_ALLTIME_DL[] = "alltime_dl";
-    const char KEY_TRANSFER_ALLTIME_UL[] = "alltime_ul";
-    const char KEY_TRANSFER_AVERAGE_TIME_QUEUE[] = "average_time_queue";
-    const char KEY_TRANSFER_GLOBAL_RATIO[] = "global_ratio";
-    const char KEY_TRANSFER_QUEUED_IO_JOBS[] = "queued_io_jobs";
-    const char KEY_TRANSFER_READ_CACHE_HITS[] = "read_cache_hits";
-    const char KEY_TRANSFER_READ_CACHE_OVERLOAD[] = "read_cache_overload";
-    const char KEY_TRANSFER_TOTAL_BUFFERS_SIZE[] = "total_buffers_size";
-    const char KEY_TRANSFER_TOTAL_PEER_CONNECTIONS[] = "total_peer_connections";
-    const char KEY_TRANSFER_TOTAL_QUEUED_SIZE[] = "total_queued_size";
-    const char KEY_TRANSFER_TOTAL_WASTE_SESSION[] = "total_wasted_session";
-    const char KEY_TRANSFER_WRITE_CACHE_OVERLOAD[] = "write_cache_overload";
+    const QString KEY_TRANSFER_ALLTIME_DL = u"alltime_dl"_s;
+    const QString KEY_TRANSFER_ALLTIME_UL = u"alltime_ul"_s;
+    const QString KEY_TRANSFER_AVERAGE_TIME_QUEUE = u"average_time_queue"_s;
+    const QString KEY_TRANSFER_GLOBAL_RATIO = u"global_ratio"_s;
+    const QString KEY_TRANSFER_QUEUED_IO_JOBS = u"queued_io_jobs"_s;
+    const QString KEY_TRANSFER_QUEUED_TRACKER_ANNOUNCES = u"queued_tracker_announces"_s;
+    const QString KEY_TRANSFER_READ_CACHE_HITS = u"read_cache_hits"_s;
+    const QString KEY_TRANSFER_READ_CACHE_OVERLOAD = u"read_cache_overload"_s;
+    const QString KEY_TRANSFER_REQUEST_LATENCY = u"request_latency"_s;
+    const QString KEY_TRANSFER_TOTAL_BUFFERS_SIZE = u"total_buffers_size"_s;
+    const QString KEY_TRANSFER_TOTAL_PEER_CONNECTIONS = u"total_peer_connections"_s;
+    const QString KEY_TRANSFER_TOTAL_QUEUED_SIZE = u"total_queued_size"_s;
+    const QString KEY_TRANSFER_TOTAL_WASTE_SESSION = u"total_wasted_session"_s;
+    const QString KEY_TRANSFER_WRITE_CACHE_OVERLOAD = u"write_cache_overload"_s;
 
-    const char KEY_FULL_UPDATE[] = "full_update";
-    const char KEY_RESPONSE_ID[] = "rid";
-    const char KEY_SUFFIX_REMOVED[] = "_removed";
+    const QString KEY_SUFFIX_REMOVED = u"_removed"_s;
 
-    void processMap(const QVariantMap &prevData, const QVariantMap &data, QVariantMap &syncData);
-    void processHash(QVariantHash prevData, const QVariantHash &data, QVariantMap &syncData, QVariantList &removedItems);
-    void processList(QVariantList prevData, const QVariantList &data, QVariantList &syncData, QVariantList &removedItems);
-    QVariantMap generateSyncData(int acceptedResponseId, const QVariantMap &data, QVariantMap &lastAcceptedData, QVariantMap &lastData);
+    const QString KEY_CATEGORIES = u"categories"_s;
+    const QString KEY_CATEGORIES_REMOVED = KEY_CATEGORIES + KEY_SUFFIX_REMOVED;
+    const QString KEY_TAGS = u"tags"_s;
+    const QString KEY_TAGS_REMOVED = KEY_TAGS + KEY_SUFFIX_REMOVED;
+    const QString KEY_TORRENTS = u"torrents"_s;
+    const QString KEY_TORRENTS_REMOVED = KEY_TORRENTS + KEY_SUFFIX_REMOVED;
+    const QString KEY_TRACKERS = u"trackers"_s;
+    const QString KEY_TRACKERS_REMOVED = KEY_TRACKERS + KEY_SUFFIX_REMOVED;
+    const QString KEY_SERVER_STATE = u"server_state"_s;
+    const QString KEY_FULL_UPDATE = u"full_update"_s;
+    const QString KEY_RESPONSE_ID = u"rid"_s;
+
+    const QString KEY_TORRENT_HAS_TRACKER_WARNING = u"has_tracker_warning"_s;
+    const QString KEY_TORRENT_HAS_TRACKER_ERROR = u"has_tracker_error"_s;
+    const QString KEY_TORRENT_HAS_OTHER_ANNOUNCE_ERROR = u"has_other_announce_error"_s;
+
+    QStringList asStrings(const QSet<BitTorrent::TorrentID> &torrentIDs)
+    {
+        QStringList result;
+        result.reserve(torrentIDs.size());
+        for (const BitTorrent::TorrentID &torrentID : torrentIDs)
+            result.emplaceBack(torrentID.toString());
+
+        return result;
+    }
+
+    bool hasWarningMessage(const BitTorrent::TrackerEntryStatus &status)
+    {
+        return std::ranges::any_of(status.endpoints, [](const BitTorrent::TrackerEndpointStatus &endpointEntry)
+        {
+            return (endpointEntry.state == BitTorrent::TrackerEndpointState::Working) && !endpointEntry.message.isEmpty();
+        });
+    }
+
+    QVariantMap processMap(const QVariantMap &prevData, const QVariantMap &data, const QVariantMap &initialSyncData);
+    std::pair<QVariantMap, QVariantList> processHash(QVariantHash prevData, const QVariantHash &data, const std::pair<QVariantMap, QVariantList> &initialSyncData);
+    std::pair<QVariantList, QVariantList> processList(QVariantList prevData, const QVariantList &data, const std::pair<QVariantList, QVariantList> &initialSyncData);
+    QJsonObject generateSyncData(int acceptedResponseId, const QVariantMap &data, QVariantMap &lastAcceptedData, QVariantMap &lastData);
 
     QVariantMap getTransferInfo()
     {
@@ -126,64 +168,68 @@ namespace
         map[KEY_TRANSFER_DLRATELIMIT] = session->downloadSpeedLimit();
         map[KEY_TRANSFER_UPRATELIMIT] = session->uploadSpeedLimit();
 
-        const quint64 atd = session->getAlltimeDL();
-        const quint64 atu = session->getAlltimeUL();
+        const qint64 atd = sessionStatus.allTimeDownload;
+        const qint64 atu = sessionStatus.allTimeUpload;
         map[KEY_TRANSFER_ALLTIME_DL] = atd;
         map[KEY_TRANSFER_ALLTIME_UL] = atu;
         map[KEY_TRANSFER_TOTAL_WASTE_SESSION] = sessionStatus.totalWasted;
-        map[KEY_TRANSFER_GLOBAL_RATIO] = ((atd > 0) && (atu > 0)) ? Utils::String::fromDouble(static_cast<qreal>(atu) / atd, 2) : "-";
+        map[KEY_TRANSFER_GLOBAL_RATIO] = ((atd > 0) && (atu > 0)) ? Utils::String::fromDouble(static_cast<qreal>(atu) / atd, 2) : u"-"_s;
         map[KEY_TRANSFER_TOTAL_PEER_CONNECTIONS] = sessionStatus.peersCount;
 
         const qreal readRatio = cacheStatus.readRatio;  // TODO: remove when LIBTORRENT_VERSION_NUM >= 20000
-        map[KEY_TRANSFER_READ_CACHE_HITS] = (readRatio > 0) ? Utils::String::fromDouble(100 * readRatio, 2) : "0";
+        map[KEY_TRANSFER_READ_CACHE_HITS] = (readRatio > 0) ? Utils::String::fromDouble(100 * readRatio, 2) : u"0"_s;
         map[KEY_TRANSFER_TOTAL_BUFFERS_SIZE] = cacheStatus.totalUsedBuffers * 16 * 1024;
 
         map[KEY_TRANSFER_WRITE_CACHE_OVERLOAD] = ((sessionStatus.diskWriteQueue > 0) && (sessionStatus.peersCount > 0))
             ? Utils::String::fromDouble((100. * sessionStatus.diskWriteQueue / sessionStatus.peersCount), 2)
-            : QLatin1String("0");
+            : u"0"_s;
         map[KEY_TRANSFER_READ_CACHE_OVERLOAD] = ((sessionStatus.diskReadQueue > 0) && (sessionStatus.peersCount > 0))
             ? Utils::String::fromDouble((100. * sessionStatus.diskReadQueue / sessionStatus.peersCount), 2)
-            : QLatin1String("0");
+            : u"0"_s;
 
         map[KEY_TRANSFER_QUEUED_IO_JOBS] = cacheStatus.jobQueueLength;
         map[KEY_TRANSFER_AVERAGE_TIME_QUEUE] = cacheStatus.averageJobTime;
         map[KEY_TRANSFER_TOTAL_QUEUED_SIZE] = cacheStatus.queuedBytes;
+        map[KEY_TRANSFER_REQUEST_LATENCY] = cacheStatus.requestLatency;
 
+        map[KEY_TRANSFER_LAST_EXTERNAL_ADDRESS_V4] = session->lastExternalIPv4Address();
+        map[KEY_TRANSFER_LAST_EXTERNAL_ADDRESS_V6] = session->lastExternalIPv6Address();
         map[KEY_TRANSFER_DHT_NODES] = sessionStatus.dhtNodes;
         map[KEY_TRANSFER_CONNECTION_STATUS] = session->isListening()
-            ? (sessionStatus.hasIncomingConnections ? "connected" : "firewalled")
-            : "disconnected";
+            ? (sessionStatus.hasIncomingConnections ? u"connected"_s : u"firewalled"_s)
+            : u"disconnected"_s;
+
+        // Tracker statistics
+        map[KEY_TRANSFER_QUEUED_TRACKER_ANNOUNCES] = sessionStatus.queuedTrackerAnnounces;
 
         return map;
     }
 
     // Compare two structures (prevData, data) and calculate difference (syncData).
     // Structures encoded as map.
-    void processMap(const QVariantMap &prevData, const QVariantMap &data, QVariantMap &syncData)
+    QVariantMap processMap(const QVariantMap &prevData, const QVariantMap &data, const QVariantMap &initialSyncData)
     {
         // initialize output variable
-        syncData.clear();
+        QVariantMap syncData;
 
         for (auto i = data.cbegin(); i != data.cend(); ++i)
         {
             const QString &key = i.key();
             const QVariant &value = i.value();
-            QVariantList removedItems;
 
-            switch (static_cast<QMetaType::Type>(value.type()))
+            switch (value.typeId())
             {
             case QMetaType::QVariantMap:
-            {
-                    QVariantMap map;
-                    processMap(prevData[key].toMap(), value.toMap(), map);
+                {
+                    const QVariantMap map = processMap(prevData[key].toMap(), value.toMap(), initialSyncData[key].toMap());
                     if (!map.isEmpty())
                         syncData[key] = map;
                 }
                 break;
             case QMetaType::QVariantHash:
-            {
-                    QVariantMap map;
-                    processHash(prevData[key].toHash(), value.toHash(), map, removedItems);
+                {
+                    const auto [map, removedItems] = processHash(prevData[key].toHash(), value.toHash()
+                            , {initialSyncData[key].toMap(), initialSyncData[key + KEY_SUFFIX_REMOVED].toList()});
                     if (!map.isEmpty())
                         syncData[key] = map;
                     if (!removedItems.isEmpty())
@@ -191,9 +237,9 @@ namespace
                 }
                 break;
             case QMetaType::QVariantList:
-            {
-                    QVariantList list;
-                    processList(prevData[key].toList(), value.toList(), list, removedItems);
+                {
+                    const auto [list, removedItems] = processList(prevData[key].toList(), value.toList()
+                            , {initialSyncData[key].toList(), initialSyncData[key + KEY_SUFFIX_REMOVED].toList()});
                     if (!list.isEmpty())
                         syncData[key] = list;
                     if (!removedItems.isEmpty())
@@ -209,141 +255,109 @@ namespace
             case QMetaType::ULongLong:
             case QMetaType::UInt:
             case QMetaType::QDateTime:
+            case QMetaType::Nullptr:
+            case QMetaType::UnknownType:
                 if (prevData[key] != value)
                     syncData[key] = value;
+                else if (const std::optional<QVariant> syncValue = Utils::Dict::get(initialSyncData, key))
+                    syncData[key] = *syncValue;
                 break;
             default:
                 Q_ASSERT_X(false, "processMap"
-                           , QString("Unexpected type: %1")
-                           .arg(QMetaType::typeName(static_cast<QMetaType::Type>(value.type())))
-                           .toUtf8().constData());
+                        , u"Unexpected type: %1"_s.arg(QString::fromLatin1(value.metaType().name()))
+                                .toUtf8().constData());
             }
         }
+
+        return syncData;
     }
 
-    // Compare two lists of structures (prevData, data) and calculate difference (syncData, removedItems).
+    // Compare two lists of structures (prevData, data) and calculate difference (items, removedItems).
     // Structures encoded as map.
     // Lists are encoded as hash table (indexed by structure key value) to improve ease of searching for removed items.
-    void processHash(QVariantHash prevData, const QVariantHash &data, QVariantMap &syncData, QVariantList &removedItems)
+    std::pair<QVariantMap, QVariantList> processHash(QVariantHash prevData, const QVariantHash &data, const std::pair<QVariantMap, QVariantList> &initialSyncData)
     {
         // initialize output variables
-        syncData.clear();
-        removedItems.clear();
+        std::pair<QVariantMap, QVariantList> syncData = initialSyncData;
+        auto &[items, removedItems] = syncData;
 
-        if (prevData.isEmpty())
+        for (auto i = data.cbegin(); i != data.cend(); ++i)
         {
-            // If list was empty before, then difference is a whole new list.
-            for (auto i = data.cbegin(); i != data.cend(); ++i)
-                syncData[i.key()] = i.value();
-        }
-        else
-        {
-            for (auto i = data.cbegin(); i != data.cend(); ++i)
+            const QString &key = i.key();
+            const QVariant &value = i.value();
+
+            Q_ASSERT(value.typeId() == QMetaType::QVariantMap);
+
+            if (!prevData.contains(key))
             {
-                switch (i.value().type())
+                // new list item found - append it to syncData
+                items[key] = value;
+                removedItems.removeOne(key);
+            }
+            else
+            {
+                // existing list item found - remove it from prevData
+                const QVariant prevValue = prevData.take(key);
+
+                const QVariantMap map = processMap(prevValue.toMap(), value.toMap(), initialSyncData.first[key].toMap());
+                if (!map.isEmpty())
                 {
-                case QVariant::Map:
-                    if (!prevData.contains(i.key()))
-                    {
-                        // new list item found - append it to syncData
-                        syncData[i.key()] = i.value();
-                    }
-                    else
-                    {
-                        QVariantMap map;
-                        processMap(prevData[i.key()].toMap(), i.value().toMap(), map);
-                        // existing list item found - remove it from prevData
-                        prevData.remove(i.key());
-                        if (!map.isEmpty())
-                        {
-                            // changed list item found - append its changes to syncData
-                            syncData[i.key()] = map;
-                        }
-                    }
-                    break;
-                case QVariant::StringList:
-                    if (!prevData.contains(i.key()))
-                    {
-                        // new list item found - append it to syncData
-                        syncData[i.key()] = i.value();
-                    }
-                    else
-                    {
-                        QVariantList list;
-                        QVariantList removedList;
-                        processList(prevData[i.key()].toList(), i.value().toList(), list, removedList);
-                        // existing list item found - remove it from prevData
-                        prevData.remove(i.key());
-                        if (!list.isEmpty() || !removedList.isEmpty())
-                        {
-                            // changed list item found - append entire list to syncData
-                            syncData[i.key()] = i.value();
-                        }
-                    }
-                    break;
-                default:
-                    Q_ASSERT(0);
+                    // changed list item found - append its changes to syncData
+                    items[key] = map;
                 }
             }
-
-            if (!prevData.isEmpty())
-            {
-                // prevData contains only items that are missing now -
-                // put them in removedItems
-                for (auto i = prevData.cbegin(); i != prevData.cend(); ++i)
-                    removedItems << i.key();
-            }
         }
+
+        // prevData contains only items that are missing now -
+        // put them in removedItems
+        for (auto it = prevData.cbegin(); it != prevData.cend(); ++it)
+            removedItems.append(it.key());
+
+        return syncData;
     }
 
-    // Compare two lists of simple value (prevData, data) and calculate difference (syncData, removedItems).
-    void processList(QVariantList prevData, const QVariantList &data, QVariantList &syncData, QVariantList &removedItems)
+    // Compare two lists of simple value (prevData, data) and calculate difference (items, removedItems).
+    std::pair<QVariantList, QVariantList> processList(QVariantList prevData, const QVariantList &data, const std::pair<QVariantList, QVariantList> &initialSyncData)
     {
         // initialize output variables
-        syncData.clear();
-        removedItems.clear();
+        std::pair<QVariantList, QVariantList> syncData = initialSyncData;
+        auto &[items, removedItems] = syncData;
 
-        if (prevData.isEmpty())
+        for (const QVariant &item : data)
         {
-            // If list was empty before, then difference is a whole new list.
-            syncData = data;
-        }
-        else
-        {
-            for (const QVariant &item : data)
+            if (!prevData.contains(item))
             {
-                if (!prevData.contains(item))
-                    // new list item found - append it to syncData
-                    syncData.append(item);
-                else
-                    // unchanged list item found - remove it from prevData
-                    prevData.removeOne(item);
+                // new list item found - append it to syncData
+                items.append(item);
+                removedItems.removeOne(item);
             }
-
-            if (!prevData.isEmpty())
-                // prevData contains only items that are missing now -
-                // put them in removedItems
-                removedItems = prevData;
+            else
+            {
+                // unchanged list item found - remove it from prevData
+                prevData.removeOne(item);
+            }
         }
+
+        // prevData contains only items that are missing now -
+        // put them in removedItems
+        removedItems.append(prevData);
+
+        return syncData;
     }
 
-    QVariantMap generateSyncData(int acceptedResponseId, const QVariantMap &data, QVariantMap &lastAcceptedData, QVariantMap &lastData)
+    QJsonObject generateSyncData(int acceptedResponseId, const QVariantMap &data, QVariantMap &lastAcceptedData, QVariantMap &lastData)
     {
         QVariantMap syncData;
         bool fullUpdate = true;
-        int lastResponseId = 0;
-        if (acceptedResponseId > 0)
+        const int lastResponseId = (acceptedResponseId > 0) ? lastData[KEY_RESPONSE_ID].toInt() : 0;
+        if (lastResponseId > 0)
         {
-            lastResponseId = lastData[KEY_RESPONSE_ID].toInt();
-
             if (lastResponseId == acceptedResponseId)
                 lastAcceptedData = lastData;
 
-            int lastAcceptedResponseId = lastAcceptedData[KEY_RESPONSE_ID].toInt();
-
-            if (lastAcceptedResponseId == acceptedResponseId)
+            if (const int lastAcceptedResponseId = lastAcceptedData[KEY_RESPONSE_ID].toInt()
+                    ; lastAcceptedResponseId == acceptedResponseId)
             {
-                processMap(lastAcceptedData, data, syncData);
                 fullUpdate = false;
             }
         }
@@ -354,35 +368,56 @@ namespace
             syncData = data;
             syncData[KEY_FULL_UPDATE] = true;
         }
+        else
+        {
+            syncData = processMap(lastAcceptedData, data, syncData);
+        }
 
-        lastResponseId = (lastResponseId % 1000000) + 1;  // cycle between 1 and 1000000
+        const int responseId = (lastResponseId % 1000000) + 1;  // cycle between 1 and 1000000
         lastData = data;
-        lastData[KEY_RESPONSE_ID] = lastResponseId;
-        syncData[KEY_RESPONSE_ID] = lastResponseId;
+        lastData[KEY_RESPONSE_ID] = responseId;
+        syncData[KEY_RESPONSE_ID] = responseId;
 
-        return syncData;
+        return QJsonObject::fromVariantMap(syncData);
+    }
+
+    void addAnnounceStats(QVariantMap &serializedTorrent, const BitTorrent::Torrent *torrent)
+    {
+        bool hasTrackerWarning = false;
+        bool hasTrackerError = false;
+        bool hasOtherAnnounceError = false;
+        for (const BitTorrent::TrackerEntryStatus &status : asConst(torrent->trackers()))
+        {
+            switch (status.state)
+            {
+            case BitTorrent::TrackerEndpointState::Working:
+                if (!hasTrackerWarning && hasWarningMessage(status))
+                    hasTrackerWarning = true;
+                break;
+            case BitTorrent::TrackerEndpointState::TrackerError:
+                hasTrackerError = true;
+                break;
+            case BitTorrent::TrackerEndpointState::NotWorking:
+            case BitTorrent::TrackerEndpointState::Unreachable:
+                hasOtherAnnounceError = true;
+                break;
+            default:
+                break;
+            }
+
+            if (hasTrackerWarning && hasTrackerError && hasOtherAnnounceError)
+                break;
+        }
+
+        serializedTorrent[KEY_TORRENT_HAS_TRACKER_WARNING] = hasTrackerWarning;
+        serializedTorrent[KEY_TORRENT_HAS_TRACKER_ERROR] = hasTrackerError;
+        serializedTorrent[KEY_TORRENT_HAS_OTHER_ANNOUNCE_ERROR] = hasOtherAnnounceError;
     }
 }
 
-SyncController::SyncController(ISessionManager *sessionManager, QObject *parent)
-    : APIController(sessionManager, parent)
+void SyncController::updateFreeDiskSpace(const qint64 freeDiskSpace)
 {
-    m_freeDiskSpaceThread = new QThread(this);
-    m_freeDiskSpaceChecker = new FreeDiskSpaceChecker();
-    m_freeDiskSpaceChecker->moveToThread(m_freeDiskSpaceThread);
-
-    connect(m_freeDiskSpaceThread, &QThread::finished, m_freeDiskSpaceChecker, &QObject::deleteLater);
-    connect(m_freeDiskSpaceChecker, &FreeDiskSpaceChecker::checked, this, &SyncController::freeDiskSpaceSizeUpdated);
-
-    m_freeDiskSpaceThread->start();
-    invokeChecker();
-    m_freeDiskSpaceElapsedTimer.start();
-}
-
-SyncController::~SyncController()
-{
-    m_freeDiskSpaceThread->quit();
-    m_freeDiskSpaceThread->wait();
+    m_freeDiskSpace = freeDiskSpace;
 }
 
 // The function returns the changed data from the server to synchronize with the web client.
@@ -413,9 +448,10 @@ SyncController::~SyncController()
 //  - "ratio": Torrent share ratio
 //  - "eta": Torrent ETA
 //  - "state": Torrent state
+//  - "error": Torrent error message (empty if the torrent is not in error state)
 //  - "seq_dl": Torrent sequential download state
 //  - "f_l_piece_prio": Torrent first last piece priority state
-//  - "completion_on": Torrent copletion time
+//  - "completion_on": Torrent completion time
 //  - "tracker": Torrent tracker
 //  - "dl_limit": Torrent download limit
 //  - "up_limit": Torrent upload limit
@@ -425,20 +461,27 @@ SyncController::~SyncController()
 //  - "uploaded_session": Amount of data uploaded since program open
 //  - "amount_left": Amount of data left to download
 //  - "save_path": Torrent save path
+//  - "download_path": Torrent download path
 //  - "completed": Amount of data completed
 //  - "max_ratio": Upload max share ratio
 //  - "max_seeding_time": Upload max seeding time
 //  - "ratio_limit": Upload share ratio limit
 //  - "seeding_time_limit": Upload seeding time limit
+//  - "share_limit_action": Action to execute when the limit is reached
 //  - "seen_complete": Indicates the time when the torrent was last seen complete/whole
 //  - "last_activity": Last time when a chunk was downloaded/uploaded
 //  - "total_size": Size including unwanted data
+//  - "has_tracker_warning": the torrent has working tracker that has a message
+//  - "has_tracker_error": the torrent has a tracker error
+//  - "has_other_announce_error": the torrent has other problems announcing to a tracker
 // Server state map may contain the following keys:
 //  - "connection_status": connection status
 //  - "dht_nodes": DHT nodes count
 //  - "dl_info_data": bytes downloaded
 //  - "dl_info_speed": download speed
 //  - "dl_rate_limit: download rate limit
+//  - "last_external_address_v4": last external address v4
+//  - "last_external_address_v6": last external address v6
 //  - "up_info_data: bytes uploaded
 //  - "up_info_speed: upload speed
 //  - "up_rate_limit: upload speed limit
@@ -449,88 +492,312 @@ SyncController::~SyncController()
 //   - rid (int): last response id
 void SyncController::maindataAction()
 {
+    if (m_maindataAcceptedID < 0)
+    {
+        makeMaindataSnapshot();
+
+        const auto *btSession = BitTorrent::Session::instance();
+        connect(btSession, &BitTorrent::Session::categoryAdded, this, &SyncController::onCategoryAdded);
+        connect(btSession, &BitTorrent::Session::categoryRemoved, this, &SyncController::onCategoryRemoved);
+        connect(btSession, &BitTorrent::Session::categoryOptionsChanged, this, &SyncController::onCategoryOptionsChanged);
+        connect(btSession, &BitTorrent::Session::subcategoriesSupportChanged, this, &SyncController::onSubcategoriesSupportChanged);
+        connect(btSession, &BitTorrent::Session::tagAdded, this, &SyncController::onTagAdded);
+        connect(btSession, &BitTorrent::Session::tagRemoved, this, &SyncController::onTagRemoved);
+        connect(btSession, &BitTorrent::Session::torrentAdded, this, &SyncController::onTorrentAdded);
+        connect(btSession, &BitTorrent::Session::torrentAboutToBeRemoved, this, &SyncController::onTorrentAboutToBeRemoved);
+        connect(btSession, &BitTorrent::Session::torrentCategoryChanged, this, &SyncController::onTorrentCategoryChanged);
+        connect(btSession, &BitTorrent::Session::torrentMetadataReceived, this, &SyncController::onTorrentMetadataReceived);
+        connect(btSession, &BitTorrent::Session::torrentStopped, this, &SyncController::onTorrentStopped);
+        connect(btSession, &BitTorrent::Session::torrentStarted, this, &SyncController::onTorrentStarted);
+        connect(btSession, &BitTorrent::Session::torrentSavePathChanged, this, &SyncController::onTorrentSavePathChanged);
+        connect(btSession, &BitTorrent::Session::torrentSavingModeChanged, this, &SyncController::onTorrentSavingModeChanged);
+        connect(btSession, &BitTorrent::Session::torrentTagAdded, this, &SyncController::onTorrentTagAdded);
+        connect(btSession, &BitTorrent::Session::torrentTagRemoved, this, &SyncController::onTorrentTagRemoved);
+        connect(btSession, &BitTorrent::Session::torrentInfoHashChanged, this, &SyncController::onTorrentInfoHashChanged);
+        connect(btSession, &BitTorrent::Session::torrentsUpdated, this, &SyncController::onTorrentsUpdated);
+        connect(btSession, &BitTorrent::Session::trackersAdded, this, &SyncController::onTorrentTrackersChanged);
+        connect(btSession, &BitTorrent::Session::trackersRemoved, this, &SyncController::onTorrentTrackersChanged);
+        connect(btSession, &BitTorrent::Session::trackersReset, this, &SyncController::onTorrentTrackersChanged);
+        connect(btSession, &BitTorrent::Session::trackerEntryStatusesUpdated, this, &SyncController::onTorrentTrackerEntryStatusesUpdated);
+    }
+
+    const int acceptedID = params()[u"rid"_s].toInt();
+    bool fullUpdate = true;
+    if ((acceptedID > 0) && (m_maindataLastSentID > 0))
+    {
+        if (m_maindataLastSentID == acceptedID)
+        {
+            m_maindataAcceptedID = acceptedID;
+            m_maindataSyncBuf = {};
+        }
+
+        if (m_maindataAcceptedID == acceptedID)
+        {
+            // We are still able to send changes for the current state of the data having by client.
+            fullUpdate = false;
+        }
+    }
+
+    const int id = (m_maindataLastSentID % 1000000) + 1;  // cycle between 1 and 1000000
+    setResult(generateMaindataSyncData(id, fullUpdate));
+    m_maindataLastSentID = id;
+}
+
+void SyncController::makeMaindataSnapshot()
+{
+    m_knownTrackers.clear();
+    m_maindataAcceptedID = 0;
+    m_maindataSnapshot = {};
+
     const auto *session = BitTorrent::Session::instance();
 
-    QVariantMap data;
-
-    QVariantMap lastResponse = sessionManager()->session()->getData(QLatin1String("syncMainDataLastResponse")).toMap();
-    QVariantMap lastAcceptedResponse = sessionManager()->session()->getData(QLatin1String("syncMainDataLastAcceptedResponse")).toMap();
-
-    QVariantHash torrents;
-    QHash<QString, QStringList> trackers;
     for (const BitTorrent::Torrent *torrent : asConst(session->torrents()))
     {
         const BitTorrent::TorrentID torrentID = torrent->id();
 
-        QVariantMap map = serialize(*torrent);
-        map.remove(KEY_TORRENT_ID);
+        QVariantMap serializedTorrent = serialize(*torrent);
+        serializedTorrent.remove(KEY_TORRENT_ID);
+        addAnnounceStats(serializedTorrent, torrent);
 
-        // Calculated last activity time can differ from actual value by up to 10 seconds (this is a libtorrent issue).
-        // So we don't need unnecessary updates of last activity time in response.
-        const auto iterTorrents = lastResponse.find("torrents");
-        if (iterTorrents != lastResponse.end())
+        for (const BitTorrent::TrackerEntryStatus &status : asConst(torrent->trackers()))
+            m_knownTrackers[status.url].insert(torrentID);
+
+        m_maindataSnapshot.torrents[torrentID.toString()] = serializedTorrent;
+    }
+
+    const QStringList categoriesList = session->categories();
+    for (const auto &categoryName : categoriesList)
+    {
+        const BitTorrent::CategoryOptions categoryOptions = session->categoryOptions(categoryName);
+        QJsonObject category = categoryOptions.toJSON();
+        // adjust it to be compatible with existing WebAPI
+        category[u"savePath"_s] = category.take(u"save_path"_s);
+        category.insert(u"name"_s, categoryName);
+        m_maindataSnapshot.categories[categoryName] = category.toVariantMap();
+    }
+
+    for (const Tag &tag : asConst(session->tags()))
+        m_maindataSnapshot.tags.append(tag.toString());
+
+    for (const auto &[tracker, torrentIDs] : asConst(m_knownTrackers).asKeyValueRange())
+        m_maindataSnapshot.trackers[tracker] = asStrings(torrentIDs);
+
+    m_maindataSnapshot.serverState = getTransferInfo();
+    m_maindataSnapshot.serverState[KEY_TRANSFER_FREESPACEONDISK] = m_freeDiskSpace;
+    m_maindataSnapshot.serverState[KEY_SYNC_MAINDATA_QUEUEING] = session->isQueueingSystemEnabled();
+    m_maindataSnapshot.serverState[KEY_SYNC_MAINDATA_REFRESH_INTERVAL] = session->refreshInterval();
+    m_maindataSnapshot.serverState[KEY_SYNC_MAINDATA_SESSION_STATE] = session->isPaused();
+    m_maindataSnapshot.serverState[KEY_SYNC_MAINDATA_USE_ALT_SPEED_LIMITS] = session->isAltGlobalSpeedLimitEnabled();
+}
+
+QJsonObject SyncController::generateMaindataSyncData(const int id, const bool fullUpdate)
+{
+    // if need to update existing sync data
+    for (const QString &category : asConst(m_updatedCategories))
+        m_maindataSyncBuf.removedCategories.removeOne(category);
+    for (const QString &category : asConst(m_removedCategories))
+        m_maindataSyncBuf.categories.remove(category);
+
+    for (const QString &tag : asConst(m_addedTags))
+        m_maindataSyncBuf.removedTags.removeOne(tag);
+    for (const QString &tag : asConst(m_removedTags))
+        m_maindataSyncBuf.tags.removeOne(tag);
+
+    for (const BitTorrent::TorrentID &torrentID : asConst(m_updatedTorrents))
+        m_maindataSyncBuf.removedTorrents.removeOne(torrentID.toString());
+
+    for (const BitTorrent::TorrentID &torrentID : asConst(m_removedTorrents))
+    {
+        const QString torrentIDStr = torrentID.toString();
+        m_maindataSyncBuf.torrents.remove(torrentIDStr);
+    }
+
+    for (const QString &tracker : asConst(m_updatedTrackers))
+        m_maindataSyncBuf.removedTrackers.removeOne(tracker);
+    for (const QString &tracker : asConst(m_removedTrackers))
+        m_maindataSyncBuf.trackers.remove(tracker);
+
+    const auto *session = BitTorrent::Session::instance();
+
+    for (const QString &categoryName : asConst(m_updatedCategories))
+    {
+        const BitTorrent::CategoryOptions categoryOptions = session->categoryOptions(categoryName);
+        auto category = categoryOptions.toJSON().toVariantMap();
+        // adjust it to be compatible with existing WebAPI
+        category[u"savePath"_s] = category.take(u"save_path"_s);
+        category.insert(u"name"_s, categoryName);
+
+        auto &categorySnapshot = m_maindataSnapshot.categories[categoryName];
+        if (const QVariantMap syncData = processMap(categorySnapshot, category, m_maindataSyncBuf.categories.value(categoryName));
+                !syncData.isEmpty())
         {
-            const QVariantHash lastResponseTorrents = iterTorrents->toHash();
-            const auto iterID = lastResponseTorrents.find(torrentID.toString());
+            m_maindataSyncBuf.categories[categoryName] = syncData;
+            categorySnapshot = category;
+        }
+    }
+    m_updatedCategories.clear();
 
-            if (iterID != lastResponseTorrents.end())
-            {
-                const QVariantMap torrentData = iterID->toMap();
-                const auto iterLastActivity = torrentData.find(KEY_TORRENT_LAST_ACTIVITY_TIME);
+    for (const QString &category : asConst(m_removedCategories))
+    {
+        m_maindataSyncBuf.removedCategories.append(category);
+        m_maindataSnapshot.categories.remove(category);
+    }
+    m_removedCategories.clear();
 
-                if (iterLastActivity != torrentData.end())
-                {
-                    const int lastValue = iterLastActivity->toInt();
-                    if (qAbs(lastValue - map[KEY_TORRENT_LAST_ACTIVITY_TIME].toInt()) < 15)
-                        map[KEY_TORRENT_LAST_ACTIVITY_TIME] = lastValue;
-                }
-            }
+    for (const QString &tag : asConst(m_addedTags))
+    {
+        m_maindataSyncBuf.tags.append(tag);
+        m_maindataSnapshot.tags.append(tag);
+    }
+    m_addedTags.clear();
+
+    for (const QString &tag : asConst(m_removedTags))
+    {
+        m_maindataSyncBuf.removedTags.append(tag);
+        m_maindataSnapshot.tags.removeOne(tag);
+    }
+    m_removedTags.clear();
+
+    for (const BitTorrent::TorrentID &torrentID : asConst(m_updatedTorrents))
+    {
+        const BitTorrent::Torrent *torrent = session->getTorrent(torrentID);
+        Q_ASSERT(torrent);
+
+        QVariantMap serializedTorrent = serialize(*torrent);
+        serializedTorrent.remove(KEY_TORRENT_ID);
+
+        const QString torrentIDStr = torrentID.toString();
+        auto &torrentSnapshot = m_maindataSnapshot.torrents[torrentIDStr];
+
+        if (m_announcedTorrents.contains(torrentID))
+        {
+            addAnnounceStats(serializedTorrent, torrent);
+        }
+        else
+        {
+            serializedTorrent[KEY_TORRENT_HAS_TRACKER_WARNING] = torrentSnapshot[KEY_TORRENT_HAS_TRACKER_WARNING];
+            serializedTorrent[KEY_TORRENT_HAS_TRACKER_ERROR] = torrentSnapshot[KEY_TORRENT_HAS_TRACKER_ERROR];
+            serializedTorrent[KEY_TORRENT_HAS_OTHER_ANNOUNCE_ERROR] = torrentSnapshot[KEY_TORRENT_HAS_OTHER_ANNOUNCE_ERROR];
         }
 
-        for (const BitTorrent::TrackerEntry &tracker : asConst(torrent->trackers()))
-            trackers[tracker.url] << torrentID.toString();
-
-        torrents[torrentID.toString()] = map;
-    }
-    data["torrents"] = torrents;
-
-    QVariantHash categories;
-    const QStringMap categoriesList = session->categories();
-    for (auto it = categoriesList.cbegin(); it != categoriesList.cend(); ++it)
-    {
-        const QString &key = it.key();
-        categories[key] = QVariantMap
+        if (const QVariantMap syncData = processMap(torrentSnapshot, serializedTorrent, m_maindataSyncBuf.torrents.value(torrentIDStr));
+                !syncData.isEmpty())
         {
-            {"name", key},
-            {"savePath", it.value()}
-        };
+            m_maindataSyncBuf.torrents[torrentIDStr] = syncData;
+            torrentSnapshot = serializedTorrent;
+        }
     }
-    data["categories"] = categories;
 
-    QVariantList tags;
-    for (const QString &tag : asConst(session->tags()))
-        tags << tag;
-    data["tags"] = tags;
-
-    QVariantHash trackersHash;
-    for (auto i = trackers.constBegin(); i != trackers.constEnd(); ++i)
+    for (const BitTorrent::TorrentID &torrentID : asConst(m_announcedTorrents))
     {
-        trackersHash[i.key()] = i.value();
+        if (m_updatedTorrents.contains(torrentID))
+            continue;
+
+        const BitTorrent::Torrent *torrent = session->getTorrent(torrentID);
+        Q_ASSERT(torrent);
+
+        const QString torrentIDStr = torrentID.toString();
+        auto &torrentSnapshot = m_maindataSnapshot.torrents[torrentIDStr];
+
+        // Only announce stats are changed so don't need to serialize torrent again
+        QVariantMap serializedTorrent = torrentSnapshot;
+        addAnnounceStats(serializedTorrent, torrent);
+
+        if (const QVariantMap syncData = processMap(torrentSnapshot, serializedTorrent, m_maindataSyncBuf.torrents.value(torrentIDStr));
+                !syncData.isEmpty())
+        {
+            m_maindataSyncBuf.torrents[torrentIDStr] = syncData;
+            torrentSnapshot = serializedTorrent;
+        }
     }
-    data["trackers"] = trackersHash;
+
+    m_updatedTorrents.clear();
+    m_announcedTorrents.clear();
+
+    for (const BitTorrent::TorrentID &torrentID : asConst(m_removedTorrents))
+    {
+        const QString torrentIDStr = torrentID.toString();
+
+        m_maindataSyncBuf.removedTorrents.append(torrentIDStr);
+        m_maindataSnapshot.torrents.remove(torrentIDStr);
+    }
+    m_removedTorrents.clear();
+
+    for (const QString &tracker : asConst(m_updatedTrackers))
+    {
+        const QStringList serializedTorrentIDs = asStrings(m_knownTrackers[tracker]);
+
+        m_maindataSyncBuf.trackers[tracker] = serializedTorrentIDs;
+        m_maindataSnapshot.trackers[tracker] = serializedTorrentIDs;
+    }
+    m_updatedTrackers.clear();
+
+    for (const QString &tracker : asConst(m_removedTrackers))
+    {
+        m_maindataSyncBuf.removedTrackers.append(tracker);
+        m_maindataSnapshot.trackers.remove(tracker);
+    }
+    m_removedTrackers.clear();
 
     QVariantMap serverState = getTransferInfo();
-    serverState[KEY_TRANSFER_FREESPACEONDISK] = getFreeDiskSpace();
+    serverState[KEY_TRANSFER_FREESPACEONDISK] = m_freeDiskSpace;
     serverState[KEY_SYNC_MAINDATA_QUEUEING] = session->isQueueingSystemEnabled();
-    serverState[KEY_SYNC_MAINDATA_USE_ALT_SPEED_LIMITS] = session->isAltGlobalSpeedLimitEnabled();
     serverState[KEY_SYNC_MAINDATA_REFRESH_INTERVAL] = session->refreshInterval();
-    data["server_state"] = serverState;
+    serverState[KEY_SYNC_MAINDATA_SESSION_STATE] = session->isPaused();
+    serverState[KEY_SYNC_MAINDATA_USE_ALT_SPEED_LIMITS] = session->isAltGlobalSpeedLimitEnabled();
+    if (const QVariantMap syncData = processMap(m_maindataSnapshot.serverState, serverState, m_maindataSyncBuf.serverState); !syncData.isEmpty())
+    {
+        m_maindataSyncBuf.serverState = syncData;
+        m_maindataSnapshot.serverState = serverState;
+    }
 
-    const int acceptedResponseId {params()["rid"].toInt()};
-    setResult(QJsonObject::fromVariantMap(generateSyncData(acceptedResponseId, data, lastAcceptedResponse, lastResponse)));
+    QJsonObject syncData;
+    syncData[KEY_RESPONSE_ID] = id;
+    if (fullUpdate)
+    {
+        m_maindataSyncBuf = m_maindataSnapshot;
+        syncData[KEY_FULL_UPDATE] = true;
+    }
 
-    sessionManager()->session()->setData(QLatin1String("syncMainDataLastResponse"), lastResponse);
-    sessionManager()->session()->setData(QLatin1String("syncMainDataLastAcceptedResponse"), lastAcceptedResponse);
+    if (!m_maindataSyncBuf.categories.isEmpty())
+    {
+        QJsonObject categories;
+        for (auto it = m_maindataSyncBuf.categories.cbegin(); it != m_maindataSyncBuf.categories.cend(); ++it)
+            categories[it.key()] = QJsonObject::fromVariantMap(it.value());
+        syncData[KEY_CATEGORIES] = categories;
+    }
+    if (!m_maindataSyncBuf.removedCategories.isEmpty())
+        syncData[KEY_CATEGORIES_REMOVED] = QJsonArray::fromStringList(m_maindataSyncBuf.removedCategories);
+
+    if (!m_maindataSyncBuf.tags.isEmpty())
+        syncData[KEY_TAGS] = QJsonArray::fromVariantList(m_maindataSyncBuf.tags);
+    if (!m_maindataSyncBuf.removedTags.isEmpty())
+        syncData[KEY_TAGS_REMOVED] = QJsonArray::fromStringList(m_maindataSyncBuf.removedTags);
+
+    if (!m_maindataSyncBuf.torrents.isEmpty())
+    {
+        QJsonObject torrents;
+        for (auto it = m_maindataSyncBuf.torrents.cbegin(); it != m_maindataSyncBuf.torrents.cend(); ++it)
+            torrents[it.key()] = QJsonObject::fromVariantMap(it.value());
+        syncData[KEY_TORRENTS] = torrents;
+    }
+    if (!m_maindataSyncBuf.removedTorrents.isEmpty())
+        syncData[KEY_TORRENTS_REMOVED] = QJsonArray::fromStringList(m_maindataSyncBuf.removedTorrents);
+
+    if (!m_maindataSyncBuf.trackers.isEmpty())
+    {
+        QJsonObject trackers;
+        for (auto it = m_maindataSyncBuf.trackers.cbegin(); it != m_maindataSyncBuf.trackers.cend(); ++it)
+            trackers[it.key()] = QJsonArray::fromStringList(it.value());
+        syncData[KEY_TRACKERS] = trackers;
+    }
+    if (!m_maindataSyncBuf.removedTrackers.isEmpty())
+        syncData[KEY_TRACKERS_REMOVED] = QJsonArray::fromStringList(m_maindataSyncBuf.removedTrackers);
+
+    if (!m_maindataSyncBuf.serverState.isEmpty())
+        syncData[KEY_SERVER_STATE] = QJsonObject::fromVariantMap(m_maindataSyncBuf.serverState);
+
+    return syncData;
 }
 
 // GET param:
@@ -538,32 +805,34 @@ void SyncController::maindataAction()
 //   - rid (int): last response id
 void SyncController::torrentPeersAction()
 {
-    auto lastResponse = sessionManager()->session()->getData(QLatin1String("syncTorrentPeersLastResponse")).toMap();
-    auto lastAcceptedResponse = sessionManager()->session()->getData(QLatin1String("syncTorrentPeersLastAcceptedResponse")).toMap();
-
-    const auto id = BitTorrent::TorrentID::fromString(params()["hash"]);
-    const BitTorrent::Torrent *torrent = BitTorrent::Session::instance()->findTorrent(id);
+    const auto id = BitTorrent::TorrentID::fromString(params()[u"hash"_s]);
+    const BitTorrent::Torrent *torrent = BitTorrent::Session::instance()->getTorrent(id);
     if (!torrent)
         throw APIError(APIErrorType::NotFound);
 
     QVariantMap data;
     QVariantHash peers;
 
-    const QVector<BitTorrent::PeerInfo> peersList = torrent->peers();
+    const QList<BitTorrent::PeerInfo> peersList = torrent->fetchPeerInfo().takeResult();
 
-    bool resolvePeerCountries = Preferences::instance()->resolvePeerCountries();
+    const auto *pref = Preferences::instance();
+    const bool resolvePeerHostNames = pref->resolvePeerHostNames();
+    const bool resolvePeerCountries = pref->resolvePeerCountries();
 
     data[KEY_SYNC_TORRENT_PEERS_SHOW_FLAGS] = resolvePeerCountries;
 
     for (const BitTorrent::PeerInfo &pi : peersList)
     {
-        if (pi.address().ip.isNull()) continue;
+        const BitTorrent::PeerAddress address = pi.address();
+        const bool useI2PSocket = pi.useI2PSocket();
+
+        if (address.ip.isNull() && !useI2PSocket)
+            continue;
 
         QVariantMap peer =
         {
-            {KEY_PEER_IP, pi.address().ip.toString()},
-            {KEY_PEER_PORT, pi.address().port},
             {KEY_PEER_CLIENT, pi.client()},
+            {KEY_PEER_ID_CLIENT, pi.peerIdClient()},
             {KEY_PEER_PROGRESS, pi.progress()},
             {KEY_PEER_DOWN_SPEED, pi.payloadDownSpeed()},
             {KEY_PEER_UP_SPEED, pi.payloadUpSpeed()},
@@ -572,44 +841,289 @@ void SyncController::torrentPeersAction()
             {KEY_PEER_CONNECTION_TYPE, pi.connectionType()},
             {KEY_PEER_FLAGS, pi.flags()},
             {KEY_PEER_FLAGS_DESCRIPTION, pi.flagsDescription()},
-            {KEY_PEER_RELEVANCE, pi.relevance()},
-            {KEY_PEER_FILES, torrent->info().filesForPiece(pi.downloadingPieceIndex()).join('\n')}
+            {KEY_PEER_RELEVANCE, pi.relevance()}
         };
 
-        if (resolvePeerCountries)
+        const qlonglong totalUpload = pi.totalUpload();
+        qreal contribution = 0;
+
+        if (totalUpload > 0)
         {
-            peer[KEY_PEER_COUNTRY_CODE] = pi.country().toLower();
-            peer[KEY_PEER_COUNTRY] = Net::GeoIPManager::CountryName(pi.country());
+            const qlonglong totalSize = (torrent->totalSize() <= 0) ? totalUpload : torrent->totalSize();
+            const qreal progressBytes = pi.progress() * totalSize;
+            contribution = static_cast<qreal>(totalUpload) / ((progressBytes <= 0) ? totalSize : progressBytes);
         }
 
-        peers[pi.address().toString()] = peer;
+        peer[KEY_PEER_CONTRIBUTION] = contribution;
+
+        if (torrent->hasMetadata())
+        {
+            const PathList filePaths = torrent->info().filesForPiece(pi.downloadingPieceIndex());
+            QStringList filesForPiece;
+            filesForPiece.reserve(filePaths.size());
+            for (const Path &filePath : filePaths)
+                filesForPiece.append(filePath.toString());
+            peer.insert(KEY_PEER_FILES, filesForPiece.join(u'\n'));
+        }
+
+        if (useI2PSocket)
+        {
+            const QString i2pAddress = pi.I2PAddress();
+            peer[KEY_PEER_I2P_DEST] = i2pAddress;
+            peers[i2pAddress] = peer;
+        }
+        else
+        {
+            peer[KEY_PEER_IP] = address.ip.toString();
+            peer[KEY_PEER_PORT] = address.port;
+
+            peer[KEY_PEER_HOST_NAME] = resolvePeerHostNames
+                ? Net::ReverseResolution::instance()->resolve(address.ip)
+                : QString();
+
+            if (resolvePeerCountries)
+            {
+                const QString country = pi.country();
+                peer[KEY_PEER_COUNTRY_CODE] = country.toLower();
+                peer[KEY_PEER_COUNTRY] = Net::GeoIPManager::CountryName(country);
+            }
+            else
+            {
+                peer[KEY_PEER_COUNTRY_CODE] = {};
+                peer[KEY_PEER_COUNTRY] = {};
+            }
+
+            peers[address.toString()] = peer;
+        }
     }
-    data["peers"] = peers;
+    data[u"peers"_s] = peers;
 
-    const int acceptedResponseId {params()["rid"].toInt()};
-    setResult(QJsonObject::fromVariantMap(generateSyncData(acceptedResponseId, data, lastAcceptedResponse, lastResponse)));
-
-    sessionManager()->session()->setData(QLatin1String("syncTorrentPeersLastResponse"), lastResponse);
-    sessionManager()->session()->setData(QLatin1String("syncTorrentPeersLastAcceptedResponse"), lastAcceptedResponse);
+    const int acceptedResponseId = params()[u"rid"_s].toInt();
+    setResult(generateSyncData(acceptedResponseId, data, m_lastAcceptedPeersResponse, m_lastPeersResponse));
 }
 
-qint64 SyncController::getFreeDiskSpace()
+void SyncController::onCategoryAdded(const QString &categoryName)
 {
-    if (m_freeDiskSpaceElapsedTimer.hasExpired(FREEDISKSPACE_CHECK_TIMEOUT))
+    m_removedCategories.remove(categoryName);
+    m_updatedCategories.insert(categoryName);
+}
+
+void SyncController::onCategoryRemoved(const QString &categoryName)
+{
+    m_updatedCategories.remove(categoryName);
+    m_removedCategories.insert(categoryName);
+}
+
+void SyncController::onCategoryOptionsChanged(const QString &categoryName)
+{
+    Q_ASSERT(!m_removedCategories.contains(categoryName));
+
+    m_updatedCategories.insert(categoryName);
+}
+
+void SyncController::onSubcategoriesSupportChanged()
+{
+    const QStringList categoriesList = BitTorrent::Session::instance()->categories();
+    for (const auto &categoryName : categoriesList)
     {
-        invokeChecker();
-        m_freeDiskSpaceElapsedTimer.restart();
+        if (!m_maindataSnapshot.categories.contains(categoryName))
+        {
+            m_removedCategories.remove(categoryName);
+            m_updatedCategories.insert(categoryName);
+        }
+    }
+}
+
+void SyncController::onTagAdded(const Tag &tag)
+{
+    m_removedTags.remove(tag.toString());
+    m_addedTags.insert(tag.toString());
+}
+
+void SyncController::onTagRemoved(const Tag &tag)
+{
+    m_addedTags.remove(tag.toString());
+    m_removedTags.insert(tag.toString());
+}
+
+void SyncController::onTorrentAdded(const BitTorrent::Torrent *torrent)
+{
+    const BitTorrent::TorrentID torrentID = torrent->id();
+
+    m_removedTorrents.remove(torrentID);
+    m_updatedTorrents.insert(torrentID);
+    m_announcedTorrents.insert(torrentID);
+
+    for (const BitTorrent::TrackerEntryStatus &status : asConst(torrent->trackers()))
+    {
+        m_knownTrackers[status.url].insert(torrentID);
+        m_updatedTrackers.insert(status.url);
+        m_removedTrackers.remove(status.url);
+    }
+}
+
+void SyncController::onTorrentAboutToBeRemoved(const BitTorrent::Torrent *torrent)
+{
+    const BitTorrent::TorrentID torrentID = torrent->id();
+
+    m_announcedTorrents.remove(torrentID);
+    m_updatedTorrents.remove(torrentID);
+    m_removedTorrents.insert(torrentID);
+
+    for (const BitTorrent::TrackerEntryStatus &status : asConst(torrent->trackers()))
+    {
+        const auto iter = m_knownTrackers.find(status.url);
+        Q_ASSERT(iter != m_knownTrackers.end());
+        if (iter == m_knownTrackers.end()) [[unlikely]]
+            continue;
+
+        QSet<BitTorrent::TorrentID> &torrentIDs = iter.value();
+        torrentIDs.remove(torrentID);
+        if (torrentIDs.isEmpty())
+        {
+            m_knownTrackers.erase(iter);
+            m_updatedTrackers.remove(status.url);
+            m_removedTrackers.insert(status.url);
+        }
+        else
+        {
+            m_updatedTrackers.insert(status.url);
+        }
+    }
+}
+
+void SyncController::onTorrentCategoryChanged(const BitTorrent::Torrent *torrent
+        , [[maybe_unused]] const QString &oldCategory)
+{
+    m_updatedTorrents.insert(torrent->id());
+}
+
+void SyncController::onTorrentMetadataReceived(const BitTorrent::Torrent *torrent)
+{
+    m_updatedTorrents.insert(torrent->id());
+}
+
+void SyncController::onTorrentStopped(const BitTorrent::Torrent *torrent)
+{
+    m_updatedTorrents.insert(torrent->id());
+    m_announcedTorrents.insert(torrent->id());
+}
+
+void SyncController::onTorrentStarted(const BitTorrent::Torrent *torrent)
+{
+    m_updatedTorrents.insert(torrent->id());
+}
+
+void SyncController::onTorrentSavePathChanged(const BitTorrent::Torrent *torrent)
+{
+    m_updatedTorrents.insert(torrent->id());
+}
+
+void SyncController::onTorrentSavingModeChanged(const BitTorrent::Torrent *torrent)
+{
+    m_updatedTorrents.insert(torrent->id());
+}
+
+void SyncController::onTorrentTagAdded(const BitTorrent::Torrent *torrent, [[maybe_unused]] const Tag &tag)
+{
+    m_updatedTorrents.insert(torrent->id());
+}
+
+void SyncController::onTorrentTagRemoved(const BitTorrent::Torrent *torrent, [[maybe_unused]] const Tag &tag)
+{
+    m_updatedTorrents.insert(torrent->id());
+}
+
+void SyncController::onTorrentInfoHashChanged(const BitTorrent::Torrent *torrent, const BitTorrent::InfoHash &prevInfoHash)
+{
+    const BitTorrent::TorrentID prevTorrentID = prevInfoHash.toTorrentID();
+
+    m_announcedTorrents.remove(prevTorrentID);
+    m_updatedTorrents.remove(prevTorrentID);
+    m_removedTorrents.insert(prevTorrentID);
+
+    const BitTorrent::TorrentID torrentID = torrent->id();
+
+    m_removedTorrents.remove(torrentID);
+    m_updatedTorrents.insert(torrentID);
+    m_announcedTorrents.insert(torrentID);
+
+    for (const BitTorrent::TrackerEntryStatus &status : asConst(torrent->trackers()))
+    {
+        const auto iter = m_knownTrackers.find(status.url);
+        Q_ASSERT(iter != m_knownTrackers.end());
+        if (iter == m_knownTrackers.end()) [[unlikely]]
+            continue;
+
+        QSet<BitTorrent::TorrentID> &torrentIDs = iter.value();
+        torrentIDs.remove(prevTorrentID);
+        torrentIDs.insert(torrentID);
+
+        m_updatedTrackers.insert(status.url);
+    }
+}
+
+void SyncController::onTorrentsUpdated(const QList<BitTorrent::Torrent *> &torrents)
+{
+    for (const BitTorrent::Torrent *torrent : torrents)
+        m_updatedTorrents.insert(torrent->id());
+}
+
+void SyncController::onTorrentTrackersChanged(BitTorrent::Torrent *torrent)
+{
+    using namespace BitTorrent;
+
+    const QList<TrackerEntryStatus> trackers = torrent->trackers();
+
+    QSet<QString> currentTrackers;
+    currentTrackers.reserve(trackers.size());
+    for (const TrackerEntryStatus &status : trackers)
+        currentTrackers.insert(status.url);
+
+    const TorrentID torrentID = torrent->id();
+    Algorithm::removeIf(m_knownTrackers
+        , [this, torrentID, currentTrackers](const QString &knownTracker, QSet<TorrentID> &torrentIDs)
+    {
+        if (auto idIter = torrentIDs.find(torrentID)
+                ; (idIter != torrentIDs.end()) && !currentTrackers.contains(knownTracker))
+        {
+            torrentIDs.erase(idIter);
+            if (torrentIDs.isEmpty())
+            {
+                m_updatedTrackers.remove(knownTracker);
+                m_removedTrackers.insert(knownTracker);
+                return true;
+            }
+
+            m_updatedTrackers.insert(knownTracker);
+            return false;
+        }
+
+        if (currentTrackers.contains(knownTracker) && !torrentIDs.contains(torrentID))
+        {
+            torrentIDs.insert(torrentID);
+            m_updatedTrackers.insert(knownTracker);
+            return false;
+        }
+
+        return false;
+    });
+
+    for (const QString &currentTracker : asConst(currentTrackers))
+    {
+        if (!m_knownTrackers.contains(currentTracker))
+        {
+            m_knownTrackers.insert(currentTracker, {torrentID});
+            m_updatedTrackers.insert(currentTracker);
+            m_removedTrackers.remove(currentTracker);
+        }
     }
 
-    return m_freeDiskSpace;
+    m_announcedTorrents.insert(torrentID);
 }
 
-void SyncController::freeDiskSpaceSizeUpdated(qint64 freeSpaceSize)
+void SyncController::onTorrentTrackerEntryStatusesUpdated(const BitTorrent::Torrent *torrent
+        , [[maybe_unused]] const QHash<QString, BitTorrent::TrackerEntryStatus> &updatedTrackers)
 {
-    m_freeDiskSpace = freeSpaceSize;
-}
-
-void SyncController::invokeChecker() const
-{
-    QMetaObject::invokeMethod(m_freeDiskSpaceChecker, &FreeDiskSpaceChecker::check, Qt::QueuedConnection);
+    m_announcedTorrents.insert(torrent->id());
 }

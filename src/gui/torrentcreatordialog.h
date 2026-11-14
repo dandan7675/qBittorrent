@@ -1,5 +1,6 @@
 /*
  * Bittorrent Client using Qt and libtorrent.
+ * Copyright (C) 2024  Radu Carpa <radu.carpa@cern.ch>
  * Copyright (C) 2017  Mike Tzou (Chocobo1)
  * Copyright (C) 2010  Christophe Dumez <chris@qbittorrent.org>
  *
@@ -29,12 +30,18 @@
 
 #pragma once
 
-#include <libtorrent/version.hpp>
-
 #include <QDialog>
 
-#include "base/bittorrent/torrentcreatorthread.h"
+#include "base/path.h"
 #include "base/settingvalue.h"
+
+class QThreadPool;
+
+namespace BitTorrent
+{
+    enum class TorrentFormat;
+    struct TorrentCreatorResult;
+}
 
 namespace Ui
 {
@@ -44,20 +51,21 @@ namespace Ui
 class TorrentCreatorDialog final : public QDialog
 {
     Q_OBJECT
+    Q_DISABLE_COPY_MOVE(TorrentCreatorDialog)
 
 public:
-    TorrentCreatorDialog(QWidget *parent = nullptr, const QString &defaultPath = {});
+    TorrentCreatorDialog(QWidget *parent = nullptr, const Path &defaultPath = {});
     ~TorrentCreatorDialog() override;
-    void updateInputPath(const QString &path);
+    void updateInputPath(const Path &path);
 
 private slots:
     void updateProgressBar(int progress);
-    void updatePiecesCount();
+    void onCalculatePiecesButtonClicked();
     void onCreateButtonClicked();
     void onAddFileButtonClicked();
     void onAddFolderButtonClicked();
     void handleCreationFailure(const QString &msg);
-    void handleCreationSuccess(const QString &path, const QString &branchPath);
+    void handleCreationSuccess(const BitTorrent::TorrentCreatorResult &result);
 
 private:
     void dropEvent(QDropEvent *event) override;
@@ -68,31 +76,32 @@ private:
     void setInteractionEnabled(bool enabled) const;
 
     int getPieceSize() const;
-#if (LIBTORRENT_VERSION_NUM >= 20000)
+#ifdef QBT_USES_LIBTORRENT2
     BitTorrent::TorrentFormat getTorrentFormat() const;
 #else
     int getPaddedFileSizeLimit() const;
 #endif
 
-    Ui::TorrentCreatorDialog *m_ui;
-    BitTorrent::TorrentCreatorThread *m_creatorThread;
+    Ui::TorrentCreatorDialog *m_ui = nullptr;
+    QThreadPool *m_threadPool = nullptr;
 
     // settings
     SettingValue<QSize> m_storeDialogSize;
     SettingValue<int> m_storePieceSize;
+    SettingValue<bool> m_storeIgnoreDotfiles;
     SettingValue<bool> m_storePrivateTorrent;
     SettingValue<bool> m_storeStartSeeding;
     SettingValue<bool> m_storeIgnoreRatio;
-#if (LIBTORRENT_VERSION_NUM >= 20000)
+#ifdef QBT_USES_LIBTORRENT2
     SettingValue<int> m_storeTorrentFormat;
 #else
     SettingValue<bool> m_storeOptimizeAlignment;
     SettingValue<int> m_paddedFileSizeLimit;
 #endif
-    SettingValue<QString> m_storeLastAddPath;
+    SettingValue<Path> m_storeLastAddPath;
     SettingValue<QString> m_storeTrackerList;
     SettingValue<QString> m_storeWebSeedList;
     SettingValue<QString> m_storeComments;
-    SettingValue<QString> m_storeLastSavePath;
+    SettingValue<Path> m_storeLastSavePath;
     SettingValue<QString> m_storeSource;
 };

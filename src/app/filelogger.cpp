@@ -1,5 +1,6 @@
 /*
  * Bittorrent Client using Qt and libtorrent.
+ * Copyright (C) 2026  Vladimir Golovnev <glassez@yandex.ru>
  * Copyright (C) 2016  sledgehammer999 <hammered999@gmail.com>
  *
  * This program is free software; you can redistribute it and/or
@@ -32,27 +33,28 @@
 
 #include <QDateTime>
 #include <QDir>
+#include <QList>
 #include <QTextStream>
-#include <QVector>
 
 #include "base/global.h"
 #include "base/logger.h"
+#include "base/profile.h"
 #include "base/utils/fs.h"
 
-namespace
-{
-    const std::chrono::seconds FLUSH_INTERVAL {2};
-}
+const QString LOG_FILENAME = u"qbittorrent.log"_s;
+const std::chrono::seconds FLUSH_INTERVAL {2};
 
-FileLogger::FileLogger(const QString &path, const bool backup, const int maxSize, const bool deleteOld, const int age, const FileLogAgeType ageType)
-    : m_backup(backup)
-    , m_maxSize(maxSize)
+FileLogger::FileLogger(const Path &path, const bool backup
+        , const int maxSize, const bool deleteOld, const int age
+        , const FileLogAgeType ageType)
+    : m_backup {backup}
+    , m_maxSize {maxSize}
 {
     m_flusher.setInterval(FLUSH_INTERVAL);
     m_flusher.setSingleShot(true);
     connect(&m_flusher, &QTimer::timeout, this, &FileLogger::flushLog);
 
-    changePath(path);
+    setPath(path);
     if (deleteOld)
         this->deleteOld(age, ageType);
 
@@ -68,27 +70,27 @@ FileLogger::~FileLogger()
     closeLogFile();
 }
 
-void FileLogger::changePath(const QString &newPath)
+void FileLogger::setPath(const Path &newPath)
 {
-    const QDir dir(newPath);
-    dir.mkpath(newPath);
-    const QString tmpPath = dir.absoluteFilePath("qbittorrent.log");
+    const Path newPathAbs = newPath.isAbsolute() ? newPath : (specialFolderLocation(SpecialFolder::Data) / newPath);
+    // compare paths as strings to perform case sensitive comparison on all the platforms
+    if (newPathAbs.data() == m_logsFolderPath.data())
+        return;
 
-    if (tmpPath != m_path)
-    {
-        m_path = tmpPath;
+    closeLogFile();
 
-        closeLogFile();
-        m_logFile.setFileName(m_path);
-        openLogFile();
-    }
+    m_logsFolderPath = newPathAbs;
+    m_logFile.setFileName((m_logsFolderPath / Path(LOG_FILENAME)).data());
+
+    Utils::Fs::mkpath(m_logsFolderPath);
+    openLogFile();
 }
 
 void FileLogger::deleteOld(const int age, const FileLogAgeType ageType)
 {
     const QDateTime date = QDateTime::currentDateTime();
-    const QDir dir(Utils::Fs::branchPath(m_path));
-    const QFileInfoList fileList = dir.entryInfoList(QStringList("qbittorrent.log.bak*")
+    const QDir dir {m_logsFolderPath.data()};
+    const QFileInfoList fileList = dir.entryInfoList(QStringList(LOG_FILENAME + u".bak*")
         , (QDir::Files | QDir::Writable), (QDir::Time | QDir::Reversed));
 
     for (const QFileInfo &file : fileList)
@@ -107,7 +109,7 @@ void FileLogger::deleteOld(const int age, const FileLogAgeType ageType)
         }
         if (modificationDate > date)
             break;
-        Utils::Fs::forceRemove(file.absoluteFilePath());
+        std::ignore = Utils::Fs::removeFile(Path(file.absoluteFilePath()));
     }
 }
 
@@ -126,40 +128,38 @@ void FileLogger::addLogMessage(const Log::Msg &msg)
     if (!m_logFile.isOpen()) return;
 
     QTextStream stream(&m_logFile);
-#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
-    stream.setCodec("UTF-8");
-#endif
 
     switch (msg.type)
     {
     case Log::INFO:
-        stream << "(I) ";
+        stream << QStringView(u"(I) ");
         break;
     case Log::WARNING:
-        stream << "(W) ";
+        stream << QStringView(u"(W) ");
         break;
     case Log::CRITICAL:
-        stream << "(C) ";
+        stream << QStringView(u"(C) ");
         break;
     default:
-        stream << "(N) ";
+        stream << QStringView(u"(N) ");
     }
 
-    stream << QDateTime::fromMSecsSinceEpoch(msg.timestamp).toString(Qt::ISODate) << " - " << msg.message << '\n';
+    stream << QDateTime::fromSecsSinceEpoch(msg.timestamp).toString(Qt::ISODate) << QStringView(u" - ") << msg.message << QChar(u'\n');
 
     if (m_backup && (m_logFile.size() >= m_maxSize))
     {
         closeLogFile();
         int counter = 0;
-        QString backupLogFilename = m_path + ".bak";
+        const Path logFilename = m_logsFolderPath / Path(LOG_FILENAME);
+        Path backupLogFilename = logFilename + u".bak";
 
-        while (QFile::exists(backupLogFilename))
+        while (backupLogFilename.exists())
         {
             ++counter;
-            backupLogFilename = m_path + ".bak" + QString::number(counter);
+            backupLogFilename = logFilename + u".bak" + QString::number(counter);
         }
 
-        QFile::rename(m_path, backupLogFilename);
+        Utils::Fs::renameFile(logFilename, backupLogFilename);
         openLogFile();
     }
     else
@@ -177,12 +177,15 @@ void FileLogger::flushLog()
 
 void FileLogger::openLogFile()
 {
-    if (!m_logFile.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)
-        || !m_logFile.setPermissions(QFile::ReadOwner | QFile::WriteOwner))
-        {
-        m_logFile.close();
-        LogMsg(tr("An error occurred while trying to open the log file. Logging to file is disabled."), Log::CRITICAL);
+    if (!m_logFile.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text))
+    {
+        LogMsg(tr("An error occurred while trying to open the log file. Logging to file is disabled. File: \"%1\". Error: \"%2\".")
+            .arg(m_logFile.fileName(), m_logFile.errorString()), Log::CRITICAL);
+        return;
     }
+
+    // best effort, don't report error
+    m_logFile.setPermissions(QFile::ReadOwner | QFile::WriteOwner);
 }
 
 void FileLogger::closeLogFile()

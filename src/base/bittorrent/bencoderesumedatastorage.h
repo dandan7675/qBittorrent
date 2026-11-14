@@ -1,6 +1,6 @@
 /*
  * Bittorrent Client using Qt and libtorrent.
- * Copyright (C) 2015, 2018  Vladimir Golovnev <glassez@yandex.ru>
+ * Copyright (C) 2015-2026  Vladimir Golovnev <glassez@yandex.ru>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -29,38 +29,37 @@
 #pragma once
 
 #include <QDir>
-#include <QVector>
+#include <QList>
+
+#include "base/pathfwd.h"
 
 #include "resumedatastorage.h"
 
 class QByteArray;
-class QThread;
 
 namespace BitTorrent
 {
-    class TorrentInfo;
-
     class BencodeResumeDataStorage final : public ResumeDataStorage
     {
         Q_OBJECT
-        Q_DISABLE_COPY(BencodeResumeDataStorage)
+        Q_DISABLE_COPY_MOVE(BencodeResumeDataStorage)
 
     public:
-        explicit BencodeResumeDataStorage(QObject *parent = nullptr);
+        explicit BencodeResumeDataStorage(const Path &path, QObject *parent = nullptr);
         ~BencodeResumeDataStorage() override;
 
-        QVector<TorrentID> registeredTorrents() const override;
-        std::optional<LoadTorrentParams> load(const TorrentID &id) const override;
-        void store(const TorrentID &id, const LoadTorrentParams &resumeData) const override;
+        QList<TorrentID> registeredTorrents() const override;
+        LoadResumeDataResult load(const TorrentID &id) const override;
+        void store(const TorrentID &id, LoadTorrentParams resumeData) const override;
         void remove(const TorrentID &id) const override;
-        void storeQueue(const QVector<TorrentID> &queue) const override;
+        void storeQueue(const QList<TorrentID> &queue) const override;
 
     private:
-        std::optional<LoadTorrentParams> loadTorrentResumeData(const QByteArray &data, const TorrentInfo &metadata) const;
+        void doLoadAll() const override;
+        void loadQueue(const Path &queueFilename);
+        LoadResumeDataResult loadTorrentResumeData(const QByteArray &data, const QByteArray &metadata) const;
 
-        const QDir m_resumeDataDir;
-        QVector<TorrentID> m_registeredTorrents;
-        QThread *m_ioThread = nullptr;
+        QList<TorrentID> m_registeredTorrents;
 
         class Worker;
         Worker *m_asyncWorker = nullptr;

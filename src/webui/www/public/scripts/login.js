@@ -1,6 +1,6 @@
 /*
  * Bittorrent Client using Qt and libtorrent.
- * Copyright (C) 2019  Mike Tzou (Chocobo1)
+ * Copyright (C) 2019-2024  Mike Tzou (Chocobo1)
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -26,42 +26,44 @@
  * exception statement from your version.
  */
 
-'use strict';
+"use strict";
 
-document.addEventListener('DOMContentLoaded', function() {
-    document.getElementById('username').focus();
-    document.getElementById('username').select();
+const submitLoginForm = () => {
+    const errorMsgElement = document.getElementById("error_msg");
+    errorMsgElement.textContent = ""; // clear previous error
 
-    document.getElementById('loginform').addEventListener('submit', function(e) {
-        e.preventDefault();
+    const usernameElement = document.getElementById("username");
+    const passwordElement = document.getElementById("password");
+
+    fetch("api/v2/auth/login", {
+            method: "POST",
+            body: new URLSearchParams({
+                username: usernameElement.value,
+                password: passwordElement.value
+            })
+        })
+        .then(async (response) => {
+                if (response.ok) {
+                    location.replace(location); // redirect
+                    location.reload(true);
+                }
+                else {
+                    const responseText = await response.text();
+                    errorMsgElement.textContent = `QBT_TR(Invalid Username or Password.)QBT_TR[CONTEXT=Login]\nQBT_TR(Server response:)QBT_TR[CONTEXT=Login] ${responseText}`;
+                }
+            },
+            (error) => {
+                errorMsgElement.textContent = `QBT_TR(Unable to log in, server is probably unreachable.)QBT_TR[CONTEXT=Login]\n${error}`;
+            });
+
+    passwordElement.value = ""; // clear previous value
+};
+
+document.addEventListener("DOMContentLoaded", (_event) => {
+    const loginForm = document.getElementById("loginform");
+    loginForm.method = "POST";
+    loginForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        submitLoginForm();
     });
 });
-
-function submitLoginForm() {
-    const errorMsgElement = document.getElementById('error_msg');
-
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', 'api/v2/auth/login', true);
-    xhr.setRequestHeader('Content-type', 'application/x-www-form-urlencoded; charset=UTF-8');
-    xhr.addEventListener('readystatechange', function() {
-        if (xhr.readyState === 4) { // DONE state
-            if ((xhr.status === 200) && (xhr.responseText === "Ok."))
-                location.reload(true);
-            else
-                errorMsgElement.innerHTML = 'QBT_TR(Invalid Username or Password.)QBT_TR[CONTEXT=HttpServer]';
-        }
-    });
-    xhr.addEventListener('error', function() {
-        errorMsgElement.innerHTML = (xhr.responseText !== "")
-            ? xhr.responseText
-            : 'QBT_TR(Unable to log in, qBittorrent is probably unreachable.)QBT_TR[CONTEXT=HttpServer]';
-    });
-
-    const usernameElement = document.getElementById('username');
-    const passwordElement = document.getElementById('password');
-    const queryString = "username=" + encodeURIComponent(usernameElement.value) + "&password=" + encodeURIComponent(passwordElement.value);
-    xhr.send(queryString);
-
-    // clear the field
-    passwordElement.value = '';
-}

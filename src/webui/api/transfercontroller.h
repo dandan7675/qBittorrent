@@ -33,7 +33,7 @@
 class TransferController : public APIController
 {
     Q_OBJECT
-    Q_DISABLE_COPY(TransferController)
+    Q_DISABLE_COPY_MOVE(TransferController)
 
 public:
     using APIController::APIController;
@@ -41,10 +41,15 @@ public:
 private slots:
     void infoAction();
     void speedLimitsModeAction();
+    void setSpeedLimitsModeAction();
     void toggleSpeedLimitsModeAction();
     void uploadLimitAction();
     void downloadLimitAction();
     void setUploadLimitAction();
     void setDownloadLimitAction();
+    void getSpeedLimitsAction();
+    void setSpeedLimitsAction();
     void banPeersAction();
+    void pauseSessionAction();
+    void resumeSessionAction();
 };

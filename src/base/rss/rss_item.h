@@ -1,5 +1,6 @@
 /*
  * Bittorrent Client using Qt and libtorrent.
+ * Copyright (C) 2024  Jonathan Ketchker
  * Copyright (C) 2017  Vladimir Golovnev <glassez@yandex.ru>
  * Copyright (C) 2010  Christophe Dumez <chris@qbittorrent.org>
  * Copyright (C) 2010  Arnaud Demaiziere <arnaud@qbittorrent.org>
@@ -42,7 +43,7 @@ namespace RSS
     class Item : public QObject
     {
         Q_OBJECT
-        Q_DISABLE_COPY(Item)
+        Q_DISABLE_COPY_MOVE(Item)
 
         friend class Folder;
         friend class Session;
@@ -52,6 +53,7 @@ namespace RSS
         virtual int unreadCount() const = 0;
         virtual void markAsRead() = 0;
         virtual void refresh() = 0;
+        virtual void updateFetchDelay() = 0;
 
         QString path() const;
         QString name() const;
@@ -76,7 +78,7 @@ namespace RSS
 
     protected:
         explicit Item(const QString &path);
-        ~Item() override;
+        ~Item() override = default;
 
         virtual void cleanup() = 0;
 

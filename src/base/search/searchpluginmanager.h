@@ -1,6 +1,6 @@
 /*
  * Bittorrent Client using Qt and libtorrent.
- * Copyright (C) 2015, 2018  Vladimir Golovnev <glassez@yandex.ru>
+ * Copyright (C) 2015-2024  Vladimir Golovnev <glassez@yandex.ru>
  * Copyright (C) 2006  Christophe Dumez <chris@qbittorrent.org>
  *
  * This program is free software; you can redistribute it and/or
@@ -29,38 +29,43 @@
 
 #pragma once
 
-#include <QHash>
-#include <QMetaType>
-#include <QObject>
+#include <boost/multi_index_container.hpp>
+#include <boost/multi_index/hashed_index.hpp>
+#include <boost/multi_index/key.hpp>
+#include <boost/multi_index/tag.hpp>
 
+#include <QtContainerFwd>
+#include <QObject>
+#include <QProcessEnvironment>
+
+#include "base/path.h"
 #include "base/utils/version.h"
 
-using PluginVersion = Utils::Version<unsigned short, 2>;
-Q_DECLARE_METATYPE(PluginVersion)
+using SearchPluginVersion = Utils::Version<3, 1>;
 
 namespace Net
 {
     struct DownloadResult;
 }
 
-struct PluginInfo
+struct SearchPluginInfo
 {
     QString name;
-    PluginVersion version;
+    SearchPluginVersion version;
     QString fullName;
     QString url;
     QStringList supportedCategories;
-    QString iconPath;
-    bool enabled;
+    Path iconPath;
+    bool enabled = false;
 };
 
 class SearchDownloadHandler;
 class SearchHandler;
 
-class SearchPluginManager : public QObject
+class SearchPluginManager final : public QObject
 {
     Q_OBJECT
-    Q_DISABLE_COPY(SearchPluginManager)
+    Q_DISABLE_COPY_MOVE(SearchPluginManager)
 
 public:
     SearchPluginManager();
@@ -73,23 +78,26 @@ public:
     QStringList enabledPlugins() const;
     QStringList supportedCategories() const;
     QStringList getPluginCategories(const QString &pluginName) const;
-    PluginInfo *pluginInfo(const QString &name) const;
+    SearchPluginInfo *pluginInfo(const QString &name) const;
+    SearchPluginInfo *pluginInfoBySiteURL(const QString &siteURL) const;
 
     void enablePlugin(const QString &name, bool enabled = true);
     void updatePlugin(const QString &name);
     void installPlugin(const QString &source);
     bool uninstallPlugin(const QString &name);
-    static void updateIconPath(PluginInfo *const plugin);
+    static void updateIconPath(SearchPluginInfo *plugin);
     void checkForUpdates();
 
     SearchHandler *startSearch(const QString &pattern, const QString &category, const QStringList &usedPlugins);
-    SearchDownloadHandler *downloadTorrent(const QString &siteUrl, const QString &url);
+    SearchDownloadHandler *downloadTorrent(const QString &pluginName, const QString &url);
 
-    static PluginVersion getPluginVersion(const QString &filePath);
+    QProcessEnvironment proxyEnvironment() const;
+
+    static SearchPluginVersion getPluginVersion(const Path &filePath);
     static QString categoryFullName(const QString &categoryName);
-    QString pluginFullName(const QString &pluginName);
-    static QString pluginsLocation();
-    static QString engineLocation();
+    QString pluginFullName(const QString &pluginName) const;
+    static Path pluginsLocation();
+    static Path engineLocation();
 
 signals:
     void pluginEnabled(const QString &name, bool enabled);
@@ -99,24 +107,33 @@ signals:
     void pluginUpdated(const QString &name);
     void pluginUpdateFailed(const QString &name, const QString &reason);
 
-    void checkForUpdatesFinished(const QHash<QString, PluginVersion> &updateInfo);
+    void checkForUpdatesFinished(const QHash<QString, SearchPluginVersion> &updateInfo);
     void checkForUpdatesFailed(const QString &reason);
 
 private:
+    void applyProxySettings();
     void update();
     void updateNova();
     void parseVersionInfo(const QByteArray &info);
-    void installPlugin_impl(const QString &name, const QString &path);
-    bool isUpdateNeeded(const QString &pluginName, PluginVersion newVersion) const;
+    void installPlugin_impl(const QString &name, const Path &srcPath);
+    bool isUpdateNeeded(const QString &pluginName, const SearchPluginVersion &newVersion) const;
 
     void versionInfoDownloadFinished(const Net::DownloadResult &result);
     void pluginDownloadFinished(const Net::DownloadResult &result);
 
-    static QString pluginPath(const QString &name);
+    static Path pluginPath(const QString &name);
 
     static QPointer<SearchPluginManager> m_instance;
 
     const QString m_updateUrl;
 
-    QHash<QString, PluginInfo*> m_plugins;
+    using Plugins = boost::multi_index_container<
+        SearchPluginInfo *,
+        boost::multi_index::indexed_by<
+            boost::multi_index::hashed_unique<boost::multi_index::tag<struct ByName>, boost::multi_index::key<&SearchPluginInfo::name>>,
+            // allow multiple plugins for the same site when they have different plugin names
+            boost::multi_index::hashed_non_unique<boost::multi_index::tag<struct BySiteURL>, boost::multi_index::key<&SearchPluginInfo::url>>>>;
+    Plugins m_plugins;
+
+    QProcessEnvironment m_proxyEnv;
 };

@@ -1,5 +1,6 @@
 /*
  * Bittorrent Client using Qt and libtorrent.
+ * Copyright (C) 2023  Vladimir Golovnev <glassez@yandex.ru>
  * Copyright (C) 2011  Christophe Dumez <chris@qbittorrent.org>
  *
  * This program is free software; you can redistribute it and/or
@@ -32,22 +33,20 @@
 
 #include "base/settingvalue.h"
 
-class QStandardItemModel;
-
 namespace BitTorrent
 {
     class Torrent;
 }
+
 namespace Ui
 {
     class PreviewSelectDialog;
 }
-class PreviewListDelegate;
 
 class PreviewSelectDialog final : public QDialog
 {
     Q_OBJECT
-    Q_DISABLE_COPY(PreviewSelectDialog)
+    Q_DISABLE_COPY_MOVE(PreviewSelectDialog)
 
 public:
     enum PreviewColumn
@@ -64,10 +63,11 @@ public:
     ~PreviewSelectDialog();
 
 signals:
-    void readyToPreviewFile(QString) const;
+    void fileSelected(int fileIndex);
 
 private slots:
     void previewButtonClicked();
+    void displayColumnHeaderMenu();
 
 private:
     void showEvent(QShowEvent *event) override;
@@ -75,10 +75,7 @@ private:
     void loadWindowState();
     void saveWindowState();
 
-    Ui::PreviewSelectDialog *m_ui;
-    QStandardItemModel *m_previewListModel;
-    PreviewListDelegate *m_listDelegate;
-    const BitTorrent::Torrent *m_torrent;
+    Ui::PreviewSelectDialog *m_ui = nullptr;
     bool m_headerStateInitialized = false;
 
     // Settings

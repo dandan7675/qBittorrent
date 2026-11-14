@@ -1,5 +1,6 @@
 /*
  * Bittorrent Client using Qt and libtorrent.
+ * Copyright (C) 2026  Vladimir Golovnev <glassez@yandex.ru>
  * Copyright (C) 2006-2012  Christophe Dumez <chris@qbittorrent.org>
  *
  * This program is free software; you can redistribute it and/or
@@ -30,21 +31,14 @@
 
 #include <QVariant>
 
-#include "base/bittorrent/common.h"
 #include "base/global.h"
 
-TorrentContentModelFolder::TorrentContentModelFolder(const QString &name, TorrentContentModelFolder *parent)
-    : TorrentContentModelItem(parent)
+TorrentContentModelFolder::TorrentContentModelFolder(const QString &name)
 {
-    Q_ASSERT(parent);
     m_name = name;
-    // Do not display incomplete extensions
-    if (m_name.endsWith(QB_EXT))
-        m_name.chop(4);
 }
 
-TorrentContentModelFolder::TorrentContentModelFolder(const QVector<QString> &data)
-    : TorrentContentModelItem(nullptr)
+TorrentContentModelFolder::TorrentContentModelFolder(const QList<QString> &data)
 {
     Q_ASSERT(data.size() == NB_COL);
     m_itemData = data;
@@ -67,7 +61,7 @@ void TorrentContentModelFolder::deleteAllChildren()
     m_childItems.clear();
 }
 
-const QVector<TorrentContentModelItem *> &TorrentContentModelFolder::children() const
+const QList<TorrentContentModelItem *> &TorrentContentModelFolder::children() const
 {
     return m_childItems;
 }
@@ -75,25 +69,34 @@ const QVector<TorrentContentModelItem *> &TorrentContentModelFolder::children() 
 void TorrentContentModelFolder::appendChild(TorrentContentModelItem *item)
 {
     Q_ASSERT(item);
+    if (!item) [[unlikely]]
+        return;
+
     m_childItems.append(item);
+    item->m_parentItem = this;
     // Update own size
     if (item->itemType() == FileType)
         increaseSize(item->size());
 }
 
-TorrentContentModelItem *TorrentContentModelFolder::child(int row) const
+void TorrentContentModelFolder::removeChild(TorrentContentModelItem *item)
 {
-    return m_childItems.value(row, nullptr);
+    Q_ASSERT(item);
+    if (!item) [[unlikely]]
+        return;
+
+    if (m_childItems.removeOne(item))
+    {
+        // Update own size
+        if (item->itemType() == FileType)
+            decreaseSize(item->size());
+        item->m_parentItem = nullptr;
+    }
 }
 
-TorrentContentModelFolder *TorrentContentModelFolder::childFolderWithName(const QString &name) const
+TorrentContentModelItem *TorrentContentModelFolder::child(const int row) const
 {
-    for (TorrentContentModelItem *child : asConst(m_childItems))
-    {
-        if ((child->itemType() == FolderType) && (child->name() == name))
-            return static_cast<TorrentContentModelFolder *>(child);
-    }
-    return nullptr;
+    return m_childItems.value(row, nullptr);
 }
 
 int TorrentContentModelFolder::childCount() const
@@ -107,13 +110,14 @@ void TorrentContentModelFolder::updatePriority()
     if (isRootItem())
         return;
 
-    Q_ASSERT(!m_childItems.isEmpty());
+    if (m_childItems.isEmpty())
+        return;
 
     // If all children have the same priority
     // then the folder should have the same
     // priority
-    const BitTorrent::DownloadPriority prio = m_childItems.first()->priority();
-    for (int i = 1; i < m_childItems.size(); ++i)
+    const BitTorrent::DownloadPriority prio = m_childItems.constFirst()->priority();
+    for (qsizetype i = 1; i < m_childItems.size(); ++i)
     {
         if (m_childItems.at(i)->priority() != prio)
         {
@@ -139,8 +143,10 @@ void TorrentContentModelFolder::setPriority(BitTorrent::DownloadPriority newPrio
 
     // Update children
     if (m_priority != BitTorrent::DownloadPriority::Mixed)
+    {
         for (TorrentContentModelItem *child : asConst(m_childItems))
             child->setPriority(m_priority, false);
+    }
 }
 
 void TorrentContentModelFolder::recalculateProgress()
@@ -160,10 +166,19 @@ void TorrentContentModelFolder::recalculateProgress()
         tRemaining += child->remaining();
     }
 
-    if (!isRootItem() && (tSize > 0))
+    if (!isRootItem())
     {
-        m_progress = tProgress / tSize;
-        m_remaining = tRemaining;
+        if (tSize > 0)
+        {
+            m_progress = tProgress / tSize;
+            m_remaining = tRemaining;
+        }
+        else
+        {
+            m_progress = 1.0;
+            m_remaining = 0;
+        }
+
         Q_ASSERT(m_progress <= 1.);
     }
 }
@@ -200,11 +215,20 @@ void TorrentContentModelFolder::recalculateAvailability()
     }
 }
 
-void TorrentContentModelFolder::increaseSize(qulonglong delta)
+void TorrentContentModelFolder::increaseSize(const qulonglong delta)
 {
     if (isRootItem())
         return;
 
     m_size += delta;
     m_parentItem->increaseSize(delta);
+}
+
+void TorrentContentModelFolder::decreaseSize(const qulonglong delta)
+{
+    if (isRootItem())
+        return;
+
+    m_size -= delta;
+    m_parentItem->decreaseSize(delta);
 }

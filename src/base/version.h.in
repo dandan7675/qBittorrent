@@ -28,7 +28,7 @@
 
 #pragma once
 
-#define QBT_VERSION_MAJOR 4
+#define QBT_VERSION_MAJOR 5
 #define QBT_VERSION_MINOR 4
 #define QBT_VERSION_BUGFIX 0
 #define QBT_VERSION_BUILD 0

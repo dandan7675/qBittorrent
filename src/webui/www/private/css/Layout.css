@@ -5,92 +5,39 @@ Core.css for Mocha UI
 Theme: Default
 
 Copyright:
-	Copyright (c) 2007-2009 Greg Houston, <http://greghoustondesign.com/>.
+    Copyright (c) 2007-2009 Greg Houston, <http://greghoustondesign.com/>.
 
 License:
-	MIT-style license.
+    MIT-style license.
 
 Required by:
-	Layout.js
+    Layout.js
 
 */
 
 /* Layout
 ---------------------------------------------------------------- */
 
-html, body {
-    background: #fff;
-}
-
-body {
-    margin: 0;  /* Required */
-}
-
 #desktop {
-    position: relative;
-    min-width: 400px;  /* Helps keep header content from wrapping */
+    cursor: default; /* Fix for issue in IE7. IE7 wants to use the I-bar text cursor */
     height: 100%;
     min-height: 100%;
+    min-width: 400px; /* Helps keep header content from wrapping */
     overflow: hidden;
-    cursor: default;  /* Fix for issue in IE7. IE7 wants to use the I-bar text cursor */
-}
-
-#desktopHeader {
-    background: #f2f2f2;
-}
-
-#desktopTitlebarWrapper {
     position: relative;
-    height: 45px;
-    overflow: hidden;
-    background: #718BA6 url(../images/bg-header.gif) repeat-x;
-}
-
-#desktopTitlebar {
-    padding: 7px 8px 6px 8px;
-    height: 32px;
-    background: url(../images/logo.gif) no-repeat;
-    background-position: left 0;
-}
-
-#desktopTitlebar h1.applicationTitle {
-    display: none;
-    margin: 0;
-    padding: 0 5px 0 0;
-    font-size: 20px;
-    line-height: 25px;
-    font-weight: bold;
-    color: #fff;
-}
-
-#desktopTitlebar h2.tagline {
-    padding: 7px 0 0 0;
-    font-family: Verdana, Arial, Helvetica, sans-serif;
-    font-size: 10px;
-    color: #d4dce4;
-    font-weight: bold;
-    text-align: center;
-    text-transform: uppercase;
-}
-
-#desktopTitlebar h2.tagline .taglineEm {
-    color: #fff;
-    font-weight: bold;
 }
 
 #topNav {
     font-family: Verdana, Arial, Helvetica, sans-serif;
     font-size: 10px;
+    padding: 13px 10px 0 0;
     position: absolute;
     right: 0;
-    top: 0;
-    color: #d4dce4;
     text-align: right;
-    padding: 13px 10px 0 0;
+    top: 0;
 }
 
 #topNav a {
-    color: #fff;
     font-weight: normal;
 }
 
@@ -101,24 +48,18 @@ body {
 /* Navbar */
 
 #desktopNavbar {
-    background: #f2f2f2;
-    /*height: 30px;*/
-    margin: 0 0px;
-    overflow: hidden;  /* Remove this line if you want the menu to be backward compatible with Firefox 2 */
-    /* Fixes by Chris */
-    /*background-color: #ccc;*/
-    height: 20px;
-    border-bottom: 1px solid #3f3f3f;
+    background-color: var(--color-background-default);
+    overflow: hidden; /* Remove this line if you want the menu to be backward compatible with Firefox 2 */
 }
 
 #desktopNavbar ul {
-    padding: 0;
-    margin: 0;
-    list-style: none;
     font-size: 12px;
+    margin: 0;
+    padding: 0;
+    user-select: none;
 }
 
-#desktopNavbar>ul>li {
+#desktopNavbar > ul > li {
     float: left;
 }
 
@@ -127,33 +68,39 @@ body {
 }
 
 #desktopNavbar ul li a {
-    /*padding: 6px 10px 6px 10px;*/
-    color: #333;
+    color: var(--color-text-default);
     font-weight: normal;
-    /* Fix by Chris */
-    padding: 2px 10px 6px 10px;
+    padding: 4px 10px;
 }
 
 #desktopNavbar ul li a:hover {
-    color: #333;
-    /* Fix By Chris */
-    background-color: #fff;
+    background-color: var(--color-background-hover);
+    color: var(--color-text-white);
 }
 
-#desktopNavbar ul li a.arrow-right, #desktopNavbar ul li a:hover.arrow-right {
-    background-image: url(../images/arrow-right.gif);
-    background-repeat: no-repeat;
-    background-position: right 7px;
+#desktopNavbar a:hover img {
+    filter: var(--color-icon-hover);
+}
+
+#desktopNavbar ul li a.arrow-right::after,
+#desktopNavbar ul li a:hover.arrow-right::after {
+    border: solid currentcolor;
+    border-width: 0 2px 2px 0;
+    content: "";
+    display: inline-block;
+    padding: 2px;
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: rotate(-45deg) translateY(-50%);
 }
 
 #desktopNavbar li ul {
-    border: 1px solid #3f3f3f;
-    background: #fff url(../images/bg-dropdown.gif) repeat-y;
-    position: absolute;
+    background-color: var(--color-background-default);
+    border: 1px solid var(--color-border-default);
     left: -999em;
+    position: absolute;
     z-index: 8000;
-    /* Fix by Chris */
-    margin-top: -6px;
 }
 
 #desktopNavbar li:hover ul ul,
@@ -163,90 +110,86 @@ body {
     left: -999em;
 }
 
-#desktopNavbar li ul ul {  /* third-and-above-level lists */
+#desktopNavbar li ul ul {
+    /* third-and-above-level lists */
     margin: -22px 0 0 163px;
 }
 
 #desktopNavbar li ul li .check {
+    font-size: 1px;
+    height: 5px;
+    left: 6px;
+    line-height: 1px;
+    overflow: hidden;
     position: absolute;
     top: 8px;
-    left: 6px;
     width: 5px;
-    height: 5px;
-    background: #555;
-    overflow: hidden;
-    line-height: 1px;
-    font-size: 1px;
 }
 
-#desktopNavbar li ul li a {
-    position: relative;
-    /*padding: 1px 9px 1px 25px;*/
-    min-width: 120px;
-    color: #3f3f3f;
+#desktopNavbar li ul li a,
+#desktopNavbar li ul li div.anchor {
+    color: var(--color-text-default);
     font-weight: normal;
-    /* Fix By Chris */
-    padding: 1px 10px 1px 20px;
-    /* Reduce left padding */
+    min-width: 155px;
+    padding: 4px 10px 4px 23px;
+    position: relative;
 }
 
-#desktopNavbar li ul li a:hover {
-    background: #6C98D9;
-    color: #fff;
-    -moz-border-radius: 2px;
+#desktopNavbar li ul li a:hover,
+#desktopNavbar li ul li div.anchor:hover {
+    background-color: var(--color-background-hover);
+    color: var(--color-text-white);
 }
 
-#desktopNavbar li ul li a:hover .check {
-    background: #fff;
-}
-
+/* lists nested under hovered list items */
 #desktopNavbar li:hover ul,
 #desktopNavbar li.ieHover ul,
 #desktopNavbar li li.ieHover ul,
 #desktopNavbar li li li.ieHover ul,
 #desktopNavbar li li:hover ul,
-#desktopNavbar li li li:hover ul {  /* lists nested under hovered list items */
+#desktopNavbar li li li:hover ul {
     left: auto;
 }
 
-#desktopNavbar li:hover {  /* For IE7 */
+/* For IE7 */
+#desktopNavbar li:hover {
     position: static;
 }
 
 li.divider {
+    border-top: 1px solid var(--color-border-default);
     margin-top: 2px;
     padding-top: 3px;
-    border-top: 1px solid #ebebeb;
 }
 
 #pageWrapper {
+    border-bottom: 1px solid var(--color-border-default);
+    border-top: 1px solid var(--color-border-default);
+    overflow: hidden; /* This can be set to hidden or auto */
     position: relative;
-    overflow: hidden;  /* This can be set to hidden or auto */
-    border-top: 1px solid #909090;
-    border-bottom: 1px solid #909090;
-    /*height: 100%;*/
+}
+
+#propertiesPanel_header {
+    height: 28px;
 }
 
 /* Footer */
 
 #desktopFooterWrapper {
-    position: absolute;
-    left: 0;
     bottom: 0;
-    width: 100%;
-    height: 30px;
+    height: 28px;
+    left: 0;
     overflow: hidden;
+    position: absolute;
+    width: 100%;
 }
 
 #desktopFooter {
     font-family: Verdana, Arial, Helvetica, sans-serif;
     font-size: 11px;
-    height: 24px;
-    padding: 6px 8px 0 8px;
-    background: #f2f2f2;
+    height: 28px;
+    padding: 2px;
 }
-
-
 
 /* Panel Layout
 ---------------------------------------------------------------- */
@@ -254,26 +197,21 @@ li.divider {
 /* Columns */
 
 .column {
-    position: relative;
     float: left;
-    overflow: hidden;  /* Required by IE6 */
+    overflow: hidden; /* Required by IE6 */
+    position: relative;
 }
 
 /* Panels */
 
 .panel {
-    position: relative;
+    border-bottom: 1px solid var(--color-border-default);
     overflow: auto;
-    background: #f8f8f8;
-    border-bottom: 1px solid #b9b9b9;
+    position: relative;
 }
 
 .panelWrapper.collapsed .panel-header {
     border-bottom: 0;
-}
-
-.panelAlt {
-    background: #f2f2f2;
 }
 
 .bottomPanel {
@@ -281,62 +219,49 @@ li.divider {
 }
 
 .pad {
+    height: 100%;
     padding: 8px;
 }
 
-#mainPanel {
-    background: #fff;
-}
-
 .panel-header {
-    position: relative;
-    background: #f1f1f1 url(../images/bg-panel-header.gif) repeat-x;
-    height: 30px;
+    border-bottom: 1px solid var(--color-border-default);
     overflow: hidden;
-    border-bottom: 1px solid #d3d3d3;
+    position: relative;
 }
 
 .panel-headerContent {
     padding-top: 2px;
 }
 
-.panel-headerContent.tabs {
-    background: url(../images/tabs.gif) repeat-x;
-    background-position: left -68px;
-}
-
 .panel-header h2 {
     display: inline-block;
     font-size: 12px;
-    margin: 0;
-    padding: 3px 8px 0 8px;
     height: 22px;
     overflow: hidden;
-    color: #333;
+    padding: 3px 8px 0;
 }
 
 .panel-collapse {
-    background: url(../icons/collapse.svg) left top no-repeat;
+    background: url("../images/collapse.svg") center/16px no-repeat;
 }
 
 .panel-expand {
-    background: url(../icons/collapse.svg) left top no-repeat;
+    background: url("../images/collapse.svg") center/16px no-repeat;
     transform: rotate(180deg);
 }
 
 .icon16 {
-    margin: 4px 0 0 2px;
     cursor: pointer;
+    margin: 4px 0 0 2px;
 }
 
 /* Column and Panel Handles */
 
 .horizontalHandle {
+    font-size: 1px;
     height: 4px;
     line-height: 1px;
-    font-size: 1px;
     overflow: hidden;
-    background: #eee url(../images/bg-handle-horizontal.gif) repeat-x;
 }
 
 .horizontalHandle.detached .handleIcon {
@@ -344,41 +269,38 @@ li.divider {
 }
 
 .horizontalHandle .handleIcon {
+    background: url("../images/handle-icon-horizontal.svg") center center
+        no-repeat;
+    height: 6px;
     margin: 0 auto;
-    height: 4px;
-    line-height: 1px;
-    font-size: 1px;
     overflow: hidden;
-    background: url(../images/handle-icon-horizontal.gif) center center no-repeat;
 }
 
 .columnHandle {
-    min-height: 10px;
-    float: left;
-    width: 4px;
-    overflow: hidden;
-    background: #c3c3c3 url(../images/handle-icon.gif) center center no-repeat;
-    border: 1px solid #909090;
-    border-top: 0;
+    background: url("../images/handle-icon.svg") center center no-repeat;
+    border: 1px solid var(--color-border-default);
     border-bottom: 0;
+    border-top: 0;
+    float: left;
+    min-height: 10px;
+    overflow: hidden;
+    width: 8px;
 }
 
 /* Toolboxes */
 
 .toolbox {
     float: right;
-    margin-top: 3px;
-    padding: 0 5px;
     height: 24px;
+    margin-top: 1px;
     overflow: hidden;
+    padding: 0 5px;
     text-align: right;
 }
 
-.panel-header-toolbox {
-}
-
-div.toolbox.divider {  /* Have to specify div here for IE6's sake */
-    background: url(../images/toolbox-divider.gif) repeat-y;
+/* Have to specify div here for IE6's sake */
+div.toolbox.divider {
+    background: url("../images/toolbox-divider.svg") repeat-y;
     padding-left: 8px;
 }
 
@@ -387,16 +309,16 @@ div.toolbox.divider {  /* Have to specify div here for IE6's sake */
 }
 
 .iconWrapper {
+    border: 1px solid transparent;
     display: inline-block;
     height: 22px;
     min-width: 22px;
     overflow: hidden;
-    border: 1px solid transparent;
 }
 
 * html .iconWrapper {
-    padding: 1px;
     border: 0;
+    padding: 1px;
 }
 
 .iconWrapper img {
@@ -407,26 +329,19 @@ div.toolbox.divider {  /* Have to specify div here for IE6's sake */
 
 .iconWrapper:hover {
     border: 1px solid #a0a0a0;
-    -moz-border-radius: 3px;
-}
-
-#spinnerWrapper {
-    width: 16px;
-    height: 16px;
-    background: url(../images/spinner-placeholder.gif) no-repeat;
-    margin: 4px 5px 0 5px;
+    border-radius: 3px;
 }
 
 #spinner {
+    background: url("../images/spinner.svg") no-repeat;
     display: none;
-    background: url(../images/spinner.gif) no-repeat;
-    width: 16px;
     height: 16px;
+    width: 16px;
 }
 
 #desktopFooter td {
-    vertical-align: top;
     text-align: left;
+    vertical-align: top;
 }
 
 td.speedLabel {

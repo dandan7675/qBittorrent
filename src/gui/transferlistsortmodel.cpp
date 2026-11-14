@@ -30,6 +30,7 @@
 
 #include <type_traits>
 
+#include <QtVersionChecks>
 #include <QDateTime>
 
 #include "base/bittorrent/infohash.h"
@@ -51,11 +52,22 @@ namespace
         const bool isLeftValid = left.isValid();
         const bool isRightValid = right.isValid();
 
-        if (isLeftValid && isRightValid)
+        if (isLeftValid == isRightValid)
             return threeWayCompare(left, right);
-        if (!isLeftValid && !isRightValid)
-            return 0;
         return isLeftValid ? -1 : 1;
+    }
+
+    int customCompare(const TagSet &left, const TagSet &right, const Utils::Compare::NaturalCompare<Qt::CaseInsensitive> &compare)
+    {
+        for (auto leftIter = left.cbegin(), rightIter = right.cbegin();
+             (leftIter != left.cend()) && (rightIter != right.cend());
+             ++leftIter, ++rightIter)
+        {
+            const int result = compare(leftIter->toString(), rightIter->toString());
+            if (result != 0)
+                return result;
+        }
+        return threeWayCompare(left.size(), right.size());
     }
 
     template <typename T>
@@ -73,6 +85,17 @@ namespace
         return isLeftValid ? -1 : 1;
     }
 
+    int compareAsBool(const QVariant &left, const QVariant &right)
+    {
+        const bool leftValid = left.isValid();
+        const bool rightValid = right.isValid();
+        if (leftValid && rightValid)
+            return threeWayCompare(left.toBool(), right.toBool());
+        if (!leftValid && !rightValid)
+            return 0;
+        return leftValid ? -1 : 1;
+    }
+
     int adjustSubSortColumn(const int column)
     {
         return ((column >= 0) && (column < TransferListModel::NB_COLUMNS))
@@ -82,51 +105,107 @@ namespace
 
 TransferListSortModel::TransferListSortModel(QObject *parent)
     : QSortFilterProxyModel {parent}
-    , m_subSortColumn {"TransferList/SubSortColumn", TransferListModel::TR_NAME, adjustSubSortColumn}
+    , m_subSortColumn {u"TransferList/SubSortColumn"_s, TransferListModel::TR_NAME, adjustSubSortColumn}
+    , m_subSortOrder {u"TransferList/SubSortOrder"_s, 0}
 {
     setSortRole(TransferListModel::UnderlyingDataRole);
 }
 
-void TransferListSortModel::setStatusFilter(TorrentFilter::Type filter)
+void TransferListSortModel::sort(const int column, const Qt::SortOrder order)
 {
-    if (m_filter.setType(filter))
-        invalidateFilter();
+    if ((m_lastSortColumn != column) && (m_lastSortColumn != -1))
+    {
+        m_subSortColumn = m_lastSortColumn;
+        m_subSortOrder = m_lastSortOrder;
+    }
+    m_lastSortColumn = column;
+    m_lastSortOrder = ((order == Qt::AscendingOrder) ? 0 : 1);
+
+    QSortFilterProxyModel::sort(column, order);
+}
+
+void TransferListSortModel::setStatusFilter(const TorrentFilter::Status status)
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
+    beginFilterChange();
+    m_filter.setStatus(status);
+    endFilterChange(Direction::Rows);
+#else
+    if (m_filter.setStatus(status))
+        invalidateRowsFilter();
+#endif
 }
 
 void TransferListSortModel::setCategoryFilter(const QString &category)
 {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
+    beginFilterChange();
+    m_filter.setCategory(category);
+    endFilterChange(Direction::Rows);
+#else
     if (m_filter.setCategory(category))
-        invalidateFilter();
+        invalidateRowsFilter();
+#endif
 }
 
 void TransferListSortModel::disableCategoryFilter()
 {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
+    beginFilterChange();
+    m_filter.setCategory(TorrentFilter::AnyCategory);
+    endFilterChange(Direction::Rows);
+#else
     if (m_filter.setCategory(TorrentFilter::AnyCategory))
-        invalidateFilter();
+        invalidateRowsFilter();
+#endif
 }
 
-void TransferListSortModel::setTagFilter(const QString &tag)
+void TransferListSortModel::setTagFilter(const Tag &tag)
 {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
+    beginFilterChange();
+    m_filter.setTag(tag);
+    endFilterChange(Direction::Rows);
+#else
     if (m_filter.setTag(tag))
-        invalidateFilter();
+        invalidateRowsFilter();
+#endif
 }
 
 void TransferListSortModel::disableTagFilter()
 {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
+    beginFilterChange();
+    m_filter.setTag(TorrentFilter::AnyTag);
+    endFilterChange(Direction::Rows);
+#else
     if (m_filter.setTag(TorrentFilter::AnyTag))
-        invalidateFilter();
+        invalidateRowsFilter();
+#endif
 }
 
-void TransferListSortModel::setTrackerFilter(const QSet<BitTorrent::TorrentID> &torrentIDs)
+void TransferListSortModel::setTrackerFilter(const std::optional<QString> &trackerHost)
 {
-    if (m_filter.setTorrentIDSet(torrentIDs))
-        invalidateFilter();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
+    beginFilterChange();
+    m_filter.setTrackerHost(trackerHost);
+    endFilterChange(Direction::Rows);
+#else
+    if (m_filter.setTrackerHost(trackerHost))
+        invalidateRowsFilter();
+#endif
 }
 
-void TransferListSortModel::disableTrackerFilter()
+void TransferListSortModel::setAnnounceStatusFilter(const std::optional<BitTorrent::TorrentAnnounceStatus> &announceStatus)
 {
-    if (m_filter.setTorrentIDSet(TorrentFilter::AnyID))
-        invalidateFilter();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
+    beginFilterChange();
+    m_filter.setAnnounceStatus(announceStatus);
+    endFilterChange(Direction::Rows);
+#else
+    if (m_filter.setAnnounceStatus(announceStatus))
+        invalidateRowsFilter();
+#endif
 }
 
 int TransferListSortModel::compare(const QModelIndex &left, const QModelIndex &right) const
@@ -138,11 +217,20 @@ int TransferListSortModel::compare(const QModelIndex &left, const QModelIndex &r
     switch (compareColumn)
     {
     case TransferListModel::TR_CATEGORY:
+    case TransferListModel::TR_DOWNLOAD_PATH:
     case TransferListModel::TR_NAME:
     case TransferListModel::TR_SAVE_PATH:
-    case TransferListModel::TR_TAGS:
     case TransferListModel::TR_TRACKER:
         return m_naturalCompare(leftValue.toString(), rightValue.toString());
+
+    case TransferListModel::TR_INFOHASH_V1:
+        return threeWayCompare(leftValue.value<SHA1Hash>(), rightValue.value<SHA1Hash>());
+
+    case TransferListModel::TR_INFOHASH_V2:
+        return threeWayCompare(leftValue.value<SHA256Hash>(), rightValue.value<SHA256Hash>());
+
+    case TransferListModel::TR_TAGS:
+        return customCompare(leftValue.value<TagSet>(), rightValue.value<TagSet>(), m_naturalCompare);
 
     case TransferListModel::TR_AMOUNT_DOWNLOADED:
     case TransferListModel::TR_AMOUNT_DOWNLOADED_SESSION:
@@ -152,6 +240,7 @@ int TransferListSortModel::compare(const QModelIndex &left, const QModelIndex &r
     case TransferListModel::TR_COMPLETED:
     case TransferListModel::TR_ETA:
     case TransferListModel::TR_LAST_ACTIVITY:
+    case TransferListModel::TR_REANNOUNCE:
     case TransferListModel::TR_SIZE:
     case TransferListModel::TR_TIME_ELAPSED:
     case TransferListModel::TR_TOTAL_SIZE:
@@ -161,11 +250,13 @@ int TransferListSortModel::compare(const QModelIndex &left, const QModelIndex &r
     case TransferListModel::TR_PROGRESS:
     case TransferListModel::TR_RATIO:
     case TransferListModel::TR_RATIO_LIMIT:
+    case TransferListModel::TR_POPULARITY:
         return customCompare(leftValue.toReal(), rightValue.toReal());
 
     case TransferListModel::TR_STATUS:
         return threeWayCompare(leftValue.toInt(), rightValue.toInt());
 
+    case TransferListModel::TR_CREATE_DATE:
     case TransferListModel::TR_ADD_DATE:
     case TransferListModel::TR_SEED_DATE:
     case TransferListModel::TR_SEEN_COMPLETE_DATE:
@@ -177,6 +268,9 @@ int TransferListSortModel::compare(const QModelIndex &left, const QModelIndex &r
     case TransferListModel::TR_UPLIMIT:
     case TransferListModel::TR_UPSPEED:
         return customCompare(leftValue.toInt(), rightValue.toInt());
+
+    case TransferListModel::TR_PRIVATE:
+        return compareAsBool(leftValue, rightValue);
 
     case TransferListModel::TR_PEERS:
     case TransferListModel::TR_SEEDS:
@@ -193,7 +287,7 @@ int TransferListSortModel::compare(const QModelIndex &left, const QModelIndex &r
         }
 
     default:
-        Q_ASSERT_X(false, Q_FUNC_INFO, "Missing comparsion case");
+        Q_ASSERT_X(false, Q_FUNC_INFO, "Missing comparison case");
         break;
     }
 
@@ -204,16 +298,16 @@ bool TransferListSortModel::lessThan(const QModelIndex &left, const QModelIndex 
 {
     Q_ASSERT(left.column() == right.column());
 
-    if (m_lastSortColumn != left.column())
-    {
-        if (m_lastSortColumn != -1)
-            m_subSortColumn = m_lastSortColumn;
-        m_lastSortColumn = left.column();
-    }
-
     const int result = compare(left, right);
     if (result == 0)
-        return compare(left.sibling(left.row(), m_subSortColumn), right.sibling(right.row(), m_subSortColumn)) < 0;
+    {
+        const int subResult = compare(left.sibling(left.row(), m_subSortColumn), right.sibling(right.row(), m_subSortColumn));
+        // Qt inverses lessThan() result when ordered descending.
+        // For sub-sorting we have to do it manually.
+        // When both are ordered descending subResult must be double-inversed, which is the same as no inversion.
+        const bool inverseSubResult = (m_lastSortOrder != m_subSortOrder); // exactly one is descending
+        return (inverseSubResult ? (subResult > 0) : (subResult < 0));
+    }
 
     return result < 0;
 }

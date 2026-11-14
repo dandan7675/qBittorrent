@@ -28,59 +28,55 @@
 
 #include "httperror.h"
 
-HTTPError::HTTPError(const int statusCode, const QString &statusText, const QString &message)
+using namespace Qt::Literals::StringLiterals;
+
+HTTPError::HTTPError(Http::ResponseStatus responseStatus, const QString &message)
     : RuntimeError {message}
-    , m_statusCode {statusCode}
-    , m_statusText {statusText}
+    , m_responseStatus {std::move(responseStatus)}
 {
 }
 
-int HTTPError::statusCode() const
+const Http::ResponseStatus &HTTPError::status() const
 {
-    return m_statusCode;
-}
-
-QString HTTPError::statusText() const
-{
-    return m_statusText;
+    return m_responseStatus;
 }
 
 BadRequestHTTPError::BadRequestHTTPError(const QString &message)
-    : HTTPError(400, QLatin1String("Bad Request"), message)
+    : HTTPError({.code = 400, .text = u"Bad Request"_s}, message)
 {
 }
 
 UnauthorizedHTTPError::UnauthorizedHTTPError(const QString &message)
-    : HTTPError(401, QLatin1String("Unauthorized"), message)
+    : HTTPError({.code = 401, .text = u"Unauthorized"_s}, message)
 {
 }
 
 ForbiddenHTTPError::ForbiddenHTTPError(const QString &message)
-    : HTTPError(403, QLatin1String("Forbidden"), message)
+    : HTTPError({.code = 403, .text = u"Forbidden"_s}, message)
 {
 }
 
 NotFoundHTTPError::NotFoundHTTPError(const QString &message)
-    : HTTPError(404, QLatin1String("Not Found"), message)
+    : HTTPError({.code = 404, .text = u"Not Found"_s}, message)
 {
 }
 
 MethodNotAllowedHTTPError::MethodNotAllowedHTTPError(const QString &message)
-    : HTTPError(405, QLatin1String("Method Not Allowed"), message)
+    : HTTPError({.code = 405, .text = u"Method Not Allowed"_s}, message)
 {
 }
 
 ConflictHTTPError::ConflictHTTPError(const QString &message)
-    : HTTPError(409, QLatin1String("Conflict"), message)
+    : HTTPError({.code = 409, .text = u"Conflict"_s}, message)
 {
 }
 
 UnsupportedMediaTypeHTTPError::UnsupportedMediaTypeHTTPError(const QString &message)
-    : HTTPError(415, QLatin1String("Unsupported Media Type"), message)
+    : HTTPError({.code = 415, .text = u"Unsupported Media Type"_s}, message)
 {
 }
 
 InternalServerErrorHTTPError::InternalServerErrorHTTPError(const QString &message)
-    : HTTPError(500, QLatin1String("Internal Server Error"), message)
+    : HTTPError({.code = 500, .text = u"Internal Server Error"_s}, message)
 {
 }

@@ -30,25 +30,33 @@
 
 #include <libtorrent/aux_/vector.hpp>
 #include <libtorrent/fwd.hpp>
-#include <libtorrent/version.hpp>
 
 #include <QString>
 
-#if (LIBTORRENT_VERSION_NUM >= 20000)
+#include "base/path.h"
+
+#ifdef QBT_USES_LIBTORRENT2
 #include <libtorrent/disk_interface.hpp>
 #include <libtorrent/file_storage.hpp>
 #include <libtorrent/io_context.hpp>
+#include <libtorrent/version.hpp>
 
 #include <QHash>
-
-#include "ltqhash.h"
 #else
 #include <libtorrent/storage.hpp>
 #endif
 
-#if (LIBTORRENT_VERSION_NUM >= 20000)
+#ifdef QBT_USES_LIBTORRENT2
 std::unique_ptr<lt::disk_interface> customDiskIOConstructor(
         lt::io_context &ioContext, lt::settings_interface const &settings, lt::counters &counters);
+std::unique_ptr<lt::disk_interface> customPosixDiskIOConstructor(
+        lt::io_context &ioContext, lt::settings_interface const &settings, lt::counters &counters);
+std::unique_ptr<lt::disk_interface> customMMapDiskIOConstructor(
+        lt::io_context &ioContext, lt::settings_interface const &settings, lt::counters &counters);
+#if LIBTORRENT_VERSION_NUM >= 20100
+std::unique_ptr<lt::disk_interface> customPreadDiskIOConstructor(
+        lt::io_context &ioContext, lt::settings_interface const &settings, lt::counters &counters);
+#endif
 
 class CustomDiskIOThread final : public lt::disk_interface
 {
@@ -87,14 +95,17 @@ public:
     void settings_updated() override;
 
 private:
-    void handleCompleteFiles(libtorrent::storage_index_t storage, const QString &savePath);
+    void handleCompleteFiles(libtorrent::storage_index_t storage, const Path &savePath);
 
     std::unique_ptr<lt::disk_interface> m_nativeDiskIO;
 
     struct StorageData
     {
-        QString savePath;
+        Path savePath;
         lt::file_storage files;
+#if LIBTORRENT_VERSION_NUM >= 20100
+        lt::renamed_files renamedFiles;
+#endif
         lt::aux::vector<lt::download_priority_t, lt::file_index_t> filePriorities;
     };
     QHash<lt::storage_index_t, StorageData> m_storageData;
@@ -114,9 +125,9 @@ public:
     lt::status_t move_storage(const std::string &savePath, lt::move_flags_t flags, lt::storage_error &ec) override;
 
 private:
-    void handleCompleteFiles(const QString &savePath);
+    void handleCompleteFiles(const Path &savePath);
 
     lt::aux::vector<lt::download_priority_t, lt::file_index_t> m_filePriorities;
-    QString m_savePath;
+    Path m_savePath;
 };
 #endif

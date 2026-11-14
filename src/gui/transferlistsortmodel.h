@@ -42,18 +42,20 @@ namespace BitTorrent
 class TransferListSortModel final : public QSortFilterProxyModel
 {
     Q_OBJECT
-    Q_DISABLE_COPY(TransferListSortModel)
+    Q_DISABLE_COPY_MOVE(TransferListSortModel)
 
 public:
     explicit TransferListSortModel(QObject *parent = nullptr);
 
-    void setStatusFilter(TorrentFilter::Type filter);
+    void sort(int column, Qt::SortOrder order = Qt::AscendingOrder) override;
+
+    void setStatusFilter(TorrentFilter::Status status);
     void setCategoryFilter(const QString &category);
     void disableCategoryFilter();
-    void setTagFilter(const QString &tag);
+    void setTagFilter(const Tag &tag);
     void disableTagFilter();
-    void setTrackerFilter(const QSet<BitTorrent::TorrentID> &torrentIDs);
-    void disableTrackerFilter();
+    void setTrackerFilter(const std::optional<QString> &trackerHost);
+    void setAnnounceStatusFilter(const std::optional<BitTorrent::TorrentAnnounceStatus> &announceStatus);
 
 private:
     int compare(const QModelIndex &left, const QModelIndex &right) const;
@@ -63,8 +65,10 @@ private:
     bool matchFilter(int sourceRow, const QModelIndex &sourceParent) const;
 
     TorrentFilter m_filter;
-    mutable CachedSettingValue<int> m_subSortColumn;
-    mutable int m_lastSortColumn = -1;
+    CachedSettingValue<int> m_subSortColumn;
+    CachedSettingValue<int> m_subSortOrder;
+    int m_lastSortColumn = -1;
+    int m_lastSortOrder = 0;
 
     Utils::Compare::NaturalCompare<Qt::CaseInsensitive> m_naturalCompare;
 };

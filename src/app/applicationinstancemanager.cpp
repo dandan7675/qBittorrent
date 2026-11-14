@@ -28,24 +28,29 @@
 
 #include "applicationinstancemanager.h"
 
+#include <QtSystemDetection>
+
 #ifdef Q_OS_WIN
 #include <windows.h>
-#endif
 
 #include <QDebug>
 #include <QSharedMemory>
+#endif
 
-#include "qtlocalpeer/qtlocalpeer.h"
+#include "base/path.h"
+#include "localpeer.h"
 
-ApplicationInstanceManager::ApplicationInstanceManager(const QString &appId, QObject *parent)
-    : QObject {parent}
-    , m_peer {new QtLocalPeer {this, appId}}
+ApplicationInstanceManager::ApplicationInstanceManager(const Path &instancePath, QObject *parent)
+    : QObject(parent)
+    , m_peer {new LocalPeer(instancePath.data(), this)}
     , m_isFirstInstance {!m_peer->isClient()}
 {
-    connect(m_peer, &QtLocalPeer::messageReceived, this, &ApplicationInstanceManager::messageReceived);
+    // use `Qt::QueuedConnection` to shift the heavy work to the receiver side
+    connect(m_peer, &LocalPeer::messageReceived, this, &ApplicationInstanceManager::messageReceived, Qt::QueuedConnection);
 
 #ifdef Q_OS_WIN
-    auto sharedMem = new QSharedMemory {appId + QLatin1String {"-shared-memory-key"}, this};
+    const QString sharedMemoryKey = instancePath.data() + u"/shared-memory";
+    auto sharedMem = new QSharedMemory(sharedMemoryKey, this);
     if (m_isFirstInstance)
     {
         // First instance creates shared memory and store PID
@@ -75,12 +80,7 @@ bool ApplicationInstanceManager::isFirstInstance() const
     return m_isFirstInstance;
 }
 
-bool ApplicationInstanceManager::sendMessage(const QString &message, const int timeout)
+bool ApplicationInstanceManager::sendMessage(const QString &message, const std::chrono::milliseconds timeout)
 {
     return m_peer->sendMessage(message, timeout);
-}
-
-QString ApplicationInstanceManager::appId() const
-{
-    return m_peer->applicationId();
 }

@@ -1,6 +1,6 @@
 /*
  * Bittorrent Client using Qt and libtorrent.
- * Copyright (C) 2018  Vladimir Golovnev <glassez@yandex.ru>
+ * Copyright (C) 2018-2026  Vladimir Golovnev <glassez@yandex.ru>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -28,38 +28,95 @@
 
 #pragma once
 
-#include <QElapsedTimer>
+#include <QSet>
+#include <QVariantMap>
 
+#include "base/bittorrent/infohash.h"
+#include "base/tag.h"
 #include "apicontroller.h"
 
-struct ISessionManager;
-
-class QThread;
-
-class FreeDiskSpaceChecker;
+namespace BitTorrent
+{
+    class Torrent;
+    struct TrackerEntryStatus;
+}
 
 class SyncController : public APIController
 {
     Q_OBJECT
-    Q_DISABLE_COPY(SyncController)
+    Q_DISABLE_COPY_MOVE(SyncController)
 
-public:
     using APIController::APIController;
 
-    explicit SyncController(ISessionManager *sessionManager, QObject *parent = nullptr);
-    ~SyncController() override;
+public slots:
+    void updateFreeDiskSpace(qint64 freeDiskSpace);
 
 private slots:
     void maindataAction();
     void torrentPeersAction();
-    void freeDiskSpaceSizeUpdated(qint64 freeSpaceSize);
 
 private:
-    qint64 getFreeDiskSpace();
-    void invokeChecker() const;
+    void makeMaindataSnapshot();
+    QJsonObject generateMaindataSyncData(int id, bool fullUpdate);
+
+    void onCategoryAdded(const QString &categoryName);
+    void onCategoryRemoved(const QString &categoryName);
+    void onCategoryOptionsChanged(const QString &categoryName);
+    void onSubcategoriesSupportChanged();
+    void onTagAdded(const Tag &tag);
+    void onTagRemoved(const Tag &tag);
+    void onTorrentAdded(const BitTorrent::Torrent *torrent);
+    void onTorrentAboutToBeRemoved(const BitTorrent::Torrent *torrent);
+    void onTorrentCategoryChanged(const BitTorrent::Torrent *torrent, const QString &oldCategory);
+    void onTorrentMetadataReceived(const BitTorrent::Torrent *torrent);
+    void onTorrentStopped(const BitTorrent::Torrent *torrent);
+    void onTorrentStarted(const BitTorrent::Torrent *torrent);
+    void onTorrentSavePathChanged(const BitTorrent::Torrent *torrent);
+    void onTorrentSavingModeChanged(const BitTorrent::Torrent *torrent);
+    void onTorrentTagAdded(const BitTorrent::Torrent *torrent, const Tag &tag);
+    void onTorrentTagRemoved(const BitTorrent::Torrent *torrent, const Tag &tag);
+    void onTorrentInfoHashChanged(const BitTorrent::Torrent *torrent, const BitTorrent::InfoHash &prevInfoHash);
+    void onTorrentsUpdated(const QList<BitTorrent::Torrent *> &torrents);
+    void onTorrentTrackersChanged(BitTorrent::Torrent *torrent);
+    void onTorrentTrackerEntryStatusesUpdated(const BitTorrent::Torrent *torrent
+            , const QHash<QString, BitTorrent::TrackerEntryStatus> &updatedTrackers);
 
     qint64 m_freeDiskSpace = 0;
-    FreeDiskSpaceChecker *m_freeDiskSpaceChecker = nullptr;
-    QThread *m_freeDiskSpaceThread = nullptr;
-    QElapsedTimer m_freeDiskSpaceElapsedTimer;
+
+    QVariantMap m_lastPeersResponse;
+    QVariantMap m_lastAcceptedPeersResponse;
+
+    QHash<QString, QSet<BitTorrent::TorrentID>> m_knownTrackers;
+
+    QSet<QString> m_updatedCategories;
+    QSet<QString> m_removedCategories;
+    QSet<QString> m_addedTags;
+    QSet<QString> m_removedTags;
+    QSet<QString> m_updatedTrackers;
+    QSet<QString> m_removedTrackers;
+    QSet<BitTorrent::TorrentID> m_updatedTorrents;
+    QSet<BitTorrent::TorrentID> m_announcedTorrents;
+    QSet<BitTorrent::TorrentID> m_removedTorrents;
+
+    struct MaindataSyncBuf
+    {
+        QHash<QString, QVariantMap> categories;
+        QStringList removedCategories;
+
+        QVariantList tags;
+        QStringList removedTags;
+
+        QHash<QString, QVariantMap> torrents;
+        QStringList removedTorrents;
+
+        QHash<QString, QStringList> trackers;
+        QStringList removedTrackers;
+
+        QVariantMap serverState;
+    };
+
+    MaindataSyncBuf m_maindataSnapshot;
+    MaindataSyncBuf m_maindataSyncBuf;
+    int m_maindataLastSentID = 0;
+    int m_maindataAcceptedID = -1;
 };

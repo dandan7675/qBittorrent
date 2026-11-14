@@ -1,6 +1,6 @@
 /*
  * Bittorrent Client using Qt and libtorrent.
- * Copyright (C) 2017  Vladimir Golovnev <glassez@yandex.ru>
+ * Copyright (C) 2017-2024  Vladimir Golovnev <glassez@yandex.ru>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -40,6 +40,7 @@ namespace RSS
 class ArticleListWidget : public QListWidget
 {
     Q_OBJECT
+    Q_DISABLE_COPY_MOVE(ArticleListWidget)
 
 public:
     explicit ArticleListWidget(QWidget *parent);
@@ -47,7 +48,7 @@ public:
     RSS::Article *getRSSArticle(QListWidgetItem *item) const;
     QListWidgetItem *mapRSSArticle(RSS::Article *rssArticle) const;
 
-    void setRSSItem(RSS::Item *rssItem, bool unreadOnly = false);
+    void setRSSItem(RSS::Item *rssItem, bool unreadOnly, const QString &filter);
 
 private slots:
     void handleArticleAdded(RSS::Article *rssArticle);
@@ -57,6 +58,7 @@ private slots:
 private:
     void checkInvariant() const;
     QListWidgetItem *createItem(RSS::Article *article) const;
+    void applyUITheme(QListWidgetItem *item) const;
 
     RSS::Item *m_rssItem = nullptr;
     bool m_unreadOnly = false;

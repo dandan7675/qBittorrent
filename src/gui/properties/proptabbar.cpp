@@ -29,6 +29,7 @@
 #include "proptabbar.h"
 
 #include <QButtonGroup>
+#include <QFocusEvent>
 #include <QKeySequence>
 #include <QPushButton>
 #include <QSpacerItem>
@@ -36,80 +37,99 @@
 #include "base/global.h"
 #include "gui/uithememanager.h"
 
+namespace
+{
+    class PropTabButton final : public QPushButton
+    {
+        Q_OBJECT
+        Q_DISABLE_COPY_MOVE(PropTabButton)
+
+    public:
+        using QPushButton::QPushButton;
+
+        void setPersistentDown(const bool down)
+        {
+            m_persistentDown = down;
+            setDown(down);
+        }
+
+    private:
+        void focusOutEvent(QFocusEvent *event) override
+        {
+            QPushButton::focusOutEvent(event);
+            if (m_persistentDown)
+                setDown(true);
+        }
+
+        bool m_persistentDown = false;
+    };
+}
+
 PropTabBar::PropTabBar(QWidget *parent)
     : QHBoxLayout(parent)
-    , m_currentIndex(-1)
 {
     setAlignment(Qt::AlignLeft | Qt::AlignCenter);
     setSpacing(3);
     m_btnGroup = new QButtonGroup(this);
     // General tab
-    QPushButton *mainInfosButton = new QPushButton(
+    QPushButton *mainInfosButton = new PropTabButton(
 #ifndef Q_OS_MACOS
-            UIThemeManager::instance()->getIcon("document-properties"),
+            UIThemeManager::instance()->getIcon(u"help-about"_s, u"document-properties"_s),
 #endif
             tr("General"), parent);
-    mainInfosButton->setShortcut(Qt::ALT + Qt::Key_G);
+    mainInfosButton->setShortcut(Qt::ALT | Qt::Key_G);
     addWidget(mainInfosButton);
     m_btnGroup->addButton(mainInfosButton, MainTab);
     // Trackers tab
-    QPushButton *trackersButton = new QPushButton(
+    QPushButton *trackersButton = new PropTabButton(
 #ifndef Q_OS_MACOS
-            UIThemeManager::instance()->getIcon("network-server"),
+            UIThemeManager::instance()->getIcon(u"trackers"_s, u"network-server"_s),
 #endif
             tr("Trackers"), parent);
-    trackersButton->setShortcut(Qt::ALT + Qt::Key_C);
+    trackersButton->setShortcut(Qt::ALT | Qt::Key_C);
     addWidget(trackersButton);
     m_btnGroup->addButton(trackersButton, TrackersTab);
     // Peers tab
-    QPushButton *peersButton = new QPushButton(
+    QPushButton *peersButton = new PropTabButton(
 #ifndef Q_OS_MACOS
-            UIThemeManager::instance()->getIcon("edit-find-user"),
+            UIThemeManager::instance()->getIcon(u"peers"_s),
 #endif
             tr("Peers"), parent);
-    peersButton->setShortcut(Qt::ALT + Qt::Key_R);
+    peersButton->setShortcut(Qt::ALT | Qt::Key_R);
     addWidget(peersButton);
     m_btnGroup->addButton(peersButton, PeersTab);
     // URL seeds tab
-    QPushButton *URLSeedsButton = new QPushButton(
+    QPushButton *URLSeedsButton = new PropTabButton(
 #ifndef Q_OS_MACOS
-            UIThemeManager::instance()->getIcon("network-server"),
+            UIThemeManager::instance()->getIcon(u"network-server"_s),
 #endif
             tr("HTTP Sources"), parent);
-    URLSeedsButton->setShortcut(Qt::ALT + Qt::Key_B);
+    URLSeedsButton->setShortcut(Qt::ALT | Qt::Key_B);
     addWidget(URLSeedsButton);
     m_btnGroup->addButton(URLSeedsButton, URLSeedsTab);
     // Files tab
-    QPushButton *filesButton = new QPushButton(
+    QPushButton *filesButton = new PropTabButton(
 #ifndef Q_OS_MACOS
-            UIThemeManager::instance()->getIcon("inode-directory"),
+            UIThemeManager::instance()->getIcon(u"directory"_s),
 #endif
             tr("Content"), parent);
-    filesButton->setShortcut(Qt::ALT + Qt::Key_Z);
+    filesButton->setShortcut(Qt::ALT | Qt::Key_Z);
     addWidget(filesButton);
     m_btnGroup->addButton(filesButton, FilesTab);
     // Spacer
     addItem(new QSpacerItem(0, 0, QSizePolicy::Expanding, QSizePolicy::Fixed));
     // Speed tab
-    QPushButton *speedButton = new QPushButton(
+    QPushButton *speedButton = new PropTabButton(
 #ifndef Q_OS_MACOS
-            UIThemeManager::instance()->getIcon("office-chart-line"),
+            UIThemeManager::instance()->getIcon(u"chart-line"_s),
 #endif
             tr("Speed"), parent);
-    speedButton->setShortcut(Qt::ALT + Qt::Key_D);
+    speedButton->setShortcut(Qt::ALT | Qt::Key_D);
     addWidget(speedButton);
     m_btnGroup->addButton(speedButton, SpeedTab);
     // SIGNAL/SLOT
-#if (QT_VERSION >= QT_VERSION_CHECK(5, 15, 0))
     connect(m_btnGroup, &QButtonGroup::idClicked
             , this, &PropTabBar::setCurrentIndex);
-#else
-    connect(m_btnGroup, qOverload<int>(&QButtonGroup::buttonClicked)
-            , this, &PropTabBar::setCurrentIndex);
-#endif
-    // Disable buttons focus
-    for (QAbstractButton *btn : asConst(m_btnGroup->buttons()))
-        btn->setFocusPolicy(Qt::NoFocus);
 }
 
 int PropTabBar::currentIndex() const
@@ -126,7 +146,7 @@ void PropTabBar::setCurrentIndex(int index)
     {
         if (m_currentIndex >= 0)
         {
-          m_btnGroup->button(m_currentIndex)->setDown(false);
+          static_cast<PropTabButton *>(m_btnGroup->button(m_currentIndex))->setPersistentDown(false);
           m_currentIndex = -1;
           emit visibilityToggled(false);
         }
@@ -135,7 +155,7 @@ void PropTabBar::setCurrentIndex(int index)
     // Unselect previous tab
     if (m_currentIndex >= 0)
     {
-        m_btnGroup->button(m_currentIndex)->setDown(false);
+        static_cast<PropTabButton *>(m_btnGroup->button(m_currentIndex))->setPersistentDown(false);
     }
     else
     {
@@ -143,8 +163,10 @@ void PropTabBar::setCurrentIndex(int index)
         emit visibilityToggled(true);
     }
     // Select the new button
-    m_btnGroup->button(index)->setDown(true);
+    static_cast<PropTabButton *>(m_btnGroup->button(index))->setPersistentDown(true);
     m_currentIndex = index;
     // Emit the signal
     emit tabChanged(index);
 }
+
+#include "proptabbar.moc"

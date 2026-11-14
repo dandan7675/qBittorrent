@@ -1,6 +1,6 @@
 /*
  * Bittorrent Client using Qt and libtorrent.
- * Copyright (C) 2017  Vladimir Golovnev <glassez@yandex.ru>
+ * Copyright (C) 2017-2023  Vladimir Golovnev <glassez@yandex.ru>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -28,8 +28,6 @@
 
 #pragma once
 
-#include <stdexcept>
-
 #include <QBasicTimer>
 #include <QHash>
 #include <QList>
@@ -38,7 +36,11 @@
 #include <QRegularExpression>
 #include <QSharedPointer>
 
-class QThread;
+#include "base/applicationcomponent.h"
+#include "base/exceptions.h"
+#include "base/settingvalue.h"
+#include "base/utils/thread.h"
+
 class QTimer;
 
 class Application;
@@ -53,21 +55,20 @@ namespace RSS
 
     class AutoDownloadRule;
 
-    class ParsingError : public std::runtime_error
+    class ParsingError : public RuntimeError
     {
     public:
-        explicit ParsingError(const QString &message);
-        QString message() const;
+        using RuntimeError::RuntimeError;
     };
 
-    class AutoDownloader final : public QObject
+    class AutoDownloader final : public ApplicationComponent<QObject>
     {
         Q_OBJECT
-        Q_DISABLE_COPY(AutoDownloader)
+        Q_DISABLE_COPY_MOVE(AutoDownloader)
 
         friend class ::Application;
 
-        AutoDownloader();
+        explicit AutoDownloader(IApplication *app);
         ~AutoDownloader() override;
 
     public:
@@ -87,13 +88,14 @@ namespace RSS
         QRegularExpression smartEpisodeRegex() const;
 
         bool downloadRepacks() const;
-        void setDownloadRepacks(bool downloadRepacks);
+        void setDownloadRepacks(bool enabled);
 
         bool hasRule(const QString &ruleName) const;
         AutoDownloadRule ruleByName(const QString &ruleName) const;
         QList<AutoDownloadRule> rules() const;
 
-        void insertRule(const AutoDownloadRule &rule);
+        void setRule(const AutoDownloadRule &rule);
+        bool cloneRule(const QString &ruleName, const QString &cloneRuleName);
         bool renameRule(const QString &ruleName, const QString &newRuleName);
         void removeRule(const QString &ruleName);
 
@@ -109,13 +111,15 @@ namespace RSS
 
     private slots:
         void process();
-        void handleTorrentDownloadFinished(const QString &url);
-        void handleTorrentDownloadFailed(const QString &url);
+        void handleTorrentAdded(const QString &source);
+        void handleAddTorrentFailed(const QString &url, const QString &error);
         void handleNewArticle(const Article *article);
+        void handleFeedURLChanged(Feed *feed, const QString &oldURL);
 
     private:
         void timerEvent(QTimerEvent *event) override;
         void setRule_impl(const AutoDownloadRule &rule);
+        void sortRules();
         void resetProcessingQueue();
         void startProcessing();
         void addJobForArticle(const Article *article);
@@ -132,11 +136,15 @@ namespace RSS
 
         static QPointer<AutoDownloader> m_instance;
 
-        bool m_processingEnabled;
-        QTimer *m_processingTimer;
-        QThread *m_ioThread;
-        AsyncFileStorage *m_fileStorage;
-        QHash<QString, AutoDownloadRule> m_rules;
+        CachedSettingValue<bool> m_storeProcessingEnabled;
+        SettingValue<QVariant> m_storeSmartEpisodeFilter;
+        SettingValue<bool> m_storeDownloadRepacks;
+
+        QTimer *m_processingTimer = nullptr;
+        Utils::Thread::UniquePtr m_ioThread;
+        AsyncFileStorage *m_fileStorage = nullptr;
+        QList<AutoDownloadRule> m_rules;
+        QHash<QString, qsizetype> m_rulesByName;
         QList<QSharedPointer<ProcessingJob>> m_processingQueue;
         QHash<QString, QSharedPointer<ProcessingJob>> m_waitingJobs;
         bool m_dirty = false;

@@ -1,6 +1,7 @@
 /*
  * Bittorrent Client using Qt and libtorrent.
- * Copyright (C) 2015, 2018  Vladimir Golovnev <glassez@yandex.ru>
+ * Copyright (C) 2024  Jonathan Ketchker
+ * Copyright (C) 2015-2024  Vladimir Golovnev <glassez@yandex.ru>
  * Copyright (C) 2006  Christophe Dumez <chris@qbittorrent.org>
  *
  * This program is free software; you can redistribute it and/or
@@ -29,15 +30,22 @@
 
 #pragma once
 
+#include <chrono>
+
+#include <QtTypes>
 #include <QHash>
-#include <QNetworkAccessManager>
+#include <QNetworkProxy>
 #include <QObject>
 #include <QQueue>
 #include <QSet>
 
+#include "base/path.h"
+
+class QNetworkAccessManager;
 class QNetworkCookie;
 class QNetworkReply;
 class QSslError;
+class QStringView;
 class QUrl;
 
 namespace Net
@@ -50,7 +58,7 @@ namespace Net
         static ServiceID fromURL(const QUrl &url);
     };
 
-    uint qHash(const ServiceID &serviceID, uint seed);
+    std::size_t qHash(const ServiceID &serviceID, std::size_t seed = 0);
     bool operator==(const ServiceID &lhs, const ServiceID &rhs);
 
     enum class DownloadStatus
@@ -78,27 +86,42 @@ namespace Net
         bool saveToFile() const;
         DownloadRequest &saveToFile(bool value);
 
+        // if saveToFile is set, the file is saved in destFileName
+        // (deprecated) if destFileName is not provided, the file will be saved
+        // in a temporary file, the name of file is set in DownloadResult::filePath
+        Path destFileName() const;
+        DownloadRequest &destFileName(const Path &value);
+
+        // when disabled, a redirection that downgrades HTTPS to a non-HTTPS scheme
+        // makes the request fail instead of being followed, matching the policy
+        // Qt applies by default (QNetworkRequest::NoLessSafeRedirectPolicy) but
+        // that we opt out of by handling redirections manually
+        bool allowInsecureRedirect() const;
+        DownloadRequest &allowInsecureRedirect(bool value);
+
     private:
         QString m_url;
         QString m_userAgent;
         qint64 m_limit = 0;
         bool m_saveToFile = false;
+        Path m_destFileName;
+        bool m_allowInsecureRedirect = false;
     };
 
     struct DownloadResult
     {
         QString url;
-        DownloadStatus status;
+        DownloadStatus status = DownloadStatus::Failed;
         QString errorString;
         QByteArray data;
-        QString filePath;
-        QString magnet;
+        Path filePath;
+        QString magnetURI;
     };
 
     class DownloadHandler : public QObject
     {
         Q_OBJECT
-        Q_DISABLE_COPY(DownloadHandler)
+        Q_DISABLE_COPY_MOVE(DownloadHandler)
 
     public:
         using QObject::QObject;
@@ -109,22 +132,24 @@ namespace Net
         void finished(const DownloadResult &result);
     };
 
-    class DownloadManager : public QObject
+    class DownloadHandlerImpl;
+
+    class DownloadManager final : public QObject
     {
         Q_OBJECT
-        Q_DISABLE_COPY(DownloadManager)
+        Q_DISABLE_COPY_MOVE(DownloadManager)
 
     public:
         static void initInstance();
         static void freeInstance();
         static DownloadManager *instance();
 
-        DownloadHandler *download(const DownloadRequest &downloadRequest);
+        DownloadHandler *download(const DownloadRequest &downloadRequest, bool useProxy);
 
         template <typename Context, typename Func>
-        void download(const DownloadRequest &downloadRequest, Context context, Func &&slot);
+        void download(const DownloadRequest &downloadRequest, bool useProxy, Context context, Func &&slot);
 
-        void registerSequentialService(const ServiceID &serviceID);
+        void registerSequentialService(const ServiceID &serviceID, std::chrono::seconds delay = std::chrono::seconds(0));
 
         QList<QNetworkCookie> cookiesForUrl(const QUrl &url) const;
         bool setCookiesFromUrl(const QList<QNetworkCookie> &cookieList, const QUrl &url);
@@ -132,29 +157,32 @@ namespace Net
         void setAllCookies(const QList<QNetworkCookie> &cookieList);
         bool deleteCookie(const QNetworkCookie &cookie);
 
-        static bool hasSupportedScheme(const QString &url);
-
-    private slots:
-        void ignoreSslErrors(QNetworkReply *, const QList<QSslError> &);
+        static bool hasSupportedScheme(QStringView url);
 
     private:
+        class NetworkCookieJar;
+
         explicit DownloadManager(QObject *parent = nullptr);
 
         void applyProxySettings();
-        void handleReplyFinished(const QNetworkReply *reply);
+        void processWaitingJobs(const ServiceID &serviceID);
+        void processRequest(DownloadHandlerImpl *downloadHandler);
 
         static DownloadManager *m_instance;
-        QNetworkAccessManager m_networkManager;
+        NetworkCookieJar *m_networkCookieJar = nullptr;
+        QNetworkAccessManager *m_networkManager = nullptr;
+        QNetworkProxy m_proxy;
 
-        QSet<ServiceID> m_sequentialServices;
+        // m_sequentialServices value is delay for same host requests
+        QHash<ServiceID, std::chrono::seconds> m_sequentialServices;
         QSet<ServiceID> m_busyServices;
-        QHash<ServiceID, QQueue<DownloadHandler *>> m_waitingJobs;
+        QHash<ServiceID, QQueue<DownloadHandlerImpl *>> m_waitingJobs;
     };
 
     template <typename Context, typename Func>
-    void DownloadManager::download(const DownloadRequest &downloadRequest, Context context, Func &&slot)
+    void DownloadManager::download(const DownloadRequest &downloadRequest, bool useProxy, Context context, Func &&slot)
     {
-        const DownloadHandler *handler = download(downloadRequest);
+        const DownloadHandler *handler = download(downloadRequest, useProxy);
         connect(handler, &DownloadHandler::finished, context, slot);
     }
 }

@@ -1,5 +1,6 @@
 /*
  * Bittorrent Client using Qt and libtorrent.
+ * Copyright (C) 2024  Vladimir Golovnev <glassez@yandex.ru>
  * Copyright (C) 2017  Mike Tzou
  *
  * This program is free software; you can redistribute it and/or
@@ -28,92 +29,133 @@
 
 #include "utils.h"
 
+#include <QtSystemDetection>
+
 #ifdef Q_OS_WIN
-#include <Objbase.h>
-#include <Shlobj.h>
+#include <objbase.h>
+#include <shlobj.h>
+#include <shellapi.h>
 #endif
 
 #include <QApplication>
 #include <QDesktopServices>
-#include <QFileInfo>
-#include <QIcon>
 #include <QPixmap>
 #include <QPixmapCache>
 #include <QPoint>
 #include <QProcess>
 #include <QRegularExpression>
 #include <QScreen>
+#include <QSize>
 #include <QStyle>
+#include <QThread>
 #include <QUrl>
 #include <QWidget>
 #include <QWindow>
 
-#if (QT_VERSION < QT_VERSION_CHECK(5, 14, 0)) && defined(Q_OS_WIN)
-#include <QDesktopWidget>
+#ifdef QBT_USES_DBUS
+#include <QDBusConnection>
+#include <QDBusInterface>
+#include <QDBusPendingCall>
+#include <QDBusPendingCallWatcher>
+#include <QDBusPendingReply>
 #endif
 
+#include "base/global.h"
+#include "base/path.h"
+#include "base/tag.h"
 #include "base/utils/fs.h"
 #include "base/utils/version.h"
 
-void Utils::Gui::resize(QWidget *widget, const QSize &newSize)
+namespace
 {
-    if (newSize.isValid())
-        widget->resize(newSize);
-    else  // depends on screen DPI
-        widget->resize(widget->size() * screenScalingFactor(widget));
-}
-
-qreal Utils::Gui::screenScalingFactor(const QWidget *widget)
-{
-#if (QT_VERSION >= QT_VERSION_CHECK(5, 14, 0))
-    Q_UNUSED(widget);
-    return 1;
-#else
-    if (!widget)
-        return 1;
-
-#ifdef Q_OS_WIN
-    const int screenNumber = qApp->desktop()->screenNumber(widget);
-    const QScreen *screen = QApplication::screens()[screenNumber];
-    // Workaround for QScreen::physicalDotsPerInch() that could return
-    // values that are smaller than the normal 96 DPI on Windows
-    const qreal physicalDPI = qMax<qreal>(screen->physicalDotsPerInch(), 96);
-    return (screen->logicalDotsPerInch() / physicalDPI);
-#elif defined(Q_OS_MACOS)
-    return 1;
-#else
-    return widget->devicePixelRatioF();
-#endif // Q_OS_WIN
-#endif // QT_VERSION
-}
-
-QPixmap Utils::Gui::scaledPixmap(const QIcon &icon, const QWidget *widget, const int height)
-{
-    Q_ASSERT(height > 0);
-    const int scaledHeight = height * Utils::Gui::screenScalingFactor(widget);
-    return icon.pixmap(scaledHeight);
-}
-
-QPixmap Utils::Gui::scaledPixmap(const QString &path, const QWidget *widget, const int height)
-{
-    const QPixmap pixmap(path);
-    const int scaledHeight = ((height > 0) ? height : pixmap.height()) * Utils::Gui::screenScalingFactor(widget);
-    return pixmap.scaledToHeight(scaledHeight, Qt::SmoothTransformation);
-}
-
-QPixmap Utils::Gui::scaledPixmapSvg(const QString &path, const QWidget *widget, const int baseHeight)
-{
-    const int scaledHeight = baseHeight * Utils::Gui::screenScalingFactor(widget);
-    const QString normalizedKey = path + '@' + QString::number(scaledHeight);
-
-    QPixmap pm;
-    QPixmapCache cache;
-    if (!cache.find(normalizedKey, &pm))
+    QUrl toURL(const Path &path)
     {
-        pm = QIcon(path).pixmap(scaledHeight);
-        cache.insert(normalizedKey, pm);
+        // Hack to access samba shares with QDesktopServices::openUrl
+        return path.data().startsWith(u"//")
+            ? QUrl(u"file:" + path.data())
+            : QUrl::fromLocalFile(path.data());
     }
-    return pm;
+
+#if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
+    void startDetached(const QString &program, const QStringList &args)
+    {
+        QProcess proc;
+        proc.setUnixProcessParameters(QProcess::UnixProcessFlag::CloseFileDescriptors);
+        proc.setProgram(program);
+        proc.setArguments(args);
+        proc.startDetached();
+    }
+
+    void invokeFileManager(const Path &path)
+    {
+        // detect and invoke file manager directly
+        const int lineMaxLength = 64;
+
+        auto lookupProc = new QProcess;
+        lookupProc->setProcessChannelMode(QProcess::ForwardedErrorChannel);
+        lookupProc->setUnixProcessParameters(QProcess::UnixProcessFlag::CloseFileDescriptors);
+        QObject::connect(lookupProc, &QProcess::finished, lookupProc
+            , [path, lookupProc](int, QProcess::ExitStatus)
+        {
+            lookupProc->deleteLater();
+
+            const auto output = QString::fromLocal8Bit(lookupProc->readLine(lineMaxLength).simplified());
+            if ((output == u"dolphin.desktop") || (output == u"org.kde.dolphin.desktop"))
+            {
+                startDetached(u"dolphin"_s, {u"--select"_s, path.toString()});
+            }
+            else if ((output == u"nautilus.desktop") || (output == u"org.gnome.Nautilus.desktop")
+                || (output == u"nautilus-folder-handler.desktop"))
+            {
+                auto deProcess = new QProcess;
+                deProcess->setProcessChannelMode(QProcess::ForwardedErrorChannel);
+                deProcess->setUnixProcessParameters(QProcess::UnixProcessFlag::CloseFileDescriptors);
+                QObject::connect(deProcess, &QProcess::finished, deProcess
+                    , [deProcess, path](int, QProcess::ExitStatus)
+                {
+                    deProcess->deleteLater();
+
+                    const auto nautilusVerStr = QString::fromLocal8Bit(deProcess->readLine(lineMaxLength))
+                        .remove(QRegularExpression(u"[^0-9.]"_s));
+                    using NautilusVersion = Utils::Version<3>;
+                    const QString pathParam = (Utils::Fs::isDir(path) ? path.parentPath() : path).toString();
+
+                    if (NautilusVersion::fromString(nautilusVerStr, {1, 0, 0}) > NautilusVersion(3, 28, 0))
+                        startDetached(u"nautilus"_s, {pathParam});
+                    else
+                        startDetached(u"nautilus"_s, {u"--no-desktop"_s, pathParam});
+                });
+                deProcess->start(u"nautilus"_s, {u"--version"_s});
+            }
+            else if (output == u"nemo.desktop")
+            {
+                startDetached(u"nemo"_s, {u"--no-desktop"_s, (Utils::Fs::isDir(path) ? path.parentPath() : path).toString()});
+            }
+            else if ((output == u"konqueror.desktop") || (output == u"kfmclient_dir.desktop"))
+            {
+                startDetached(u"konqueror"_s, {u"--select"_s, path.toString()});
+            }
+            else if (output == u"thunar.desktop")
+            {
+                startDetached(u"thunar"_s, {path.toString()});
+            }
+            else
+            {
+                // "caja" manager can't pinpoint the file, see: https://github.com/qbittorrent/qBittorrent/issues/5003
+                Utils::Gui::openPath(path.parentPath());
+            }
+        });
+        lookupProc->start(u"xdg-mime"_s, {u"query"_s, u"default"_s, u"inode/directory"_s});
+    }
+#endif
+}
+
+QPixmap Utils::Gui::scaledPixmap(const Path &path, const int height)
+{
+    Q_ASSERT(height >= 0);
+
+    const QPixmap pixmap {path.data()};
+    return (height == 0) ? pixmap : pixmap.scaledToHeight(height, Qt::SmoothTransformation);
 }
 
 QSize Utils::Gui::smallIconSize(const QWidget *widget)
@@ -165,78 +207,109 @@ QPoint Utils::Gui::screenCenter(const QWidget *w)
 }
 
 // Open the given path with an appropriate application
-void Utils::Gui::openPath(const QString &absolutePath)
+void Utils::Gui::openPath(const Path &path)
 {
-    const QString path = Utils::Fs::toUniformPath(absolutePath);
-    // Hack to access samba shares with QDesktopServices::openUrl
-    if (path.startsWith("//"))
-        QDesktopServices::openUrl(Utils::Fs::toNativePath("file:" + path));
-    else
-        QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+    const QUrl url = toURL(path);
+
+#ifdef Q_OS_WIN
+    auto *thread = QThread::create([path]()
+    {
+        if (SUCCEEDED(::CoInitializeEx(NULL, (COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE))))
+        {
+            const std::wstring pathWStr = path.toString().toStdWString();
+
+            ::ShellExecuteW(nullptr, nullptr, pathWStr.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+
+            ::CoUninitialize();
+        }
+    });
+    thread->setObjectName("Utils::Gui::openPath thread");
+    QObject::connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+    thread->start();
+#else
+    QDesktopServices::openUrl(url);
+#endif
 }
 
 // Open the parent directory of the given path with a file manager and select
 // (if possible) the item at the given path
-void Utils::Gui::openFolderSelect(const QString &absolutePath)
+void Utils::Gui::openFolderSelect(const Path &path)
 {
-    QString path {Utils::Fs::toUniformPath(absolutePath)};
-    const QFileInfo pathInfo {path};
     // If the item to select doesn't exist, try to open its parent
-    if (!pathInfo.exists(path))
+    if (!path.exists())
     {
-        openPath(path.left(path.lastIndexOf('/')));
+        openPath(path.parentPath());
         return;
     }
 
 #ifdef Q_OS_WIN
-    HRESULT hresult = ::CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-    PIDLIST_ABSOLUTE pidl = ::ILCreateFromPathW(reinterpret_cast<PCTSTR>(Utils::Fs::toNativePath(path).utf16()));
-    if (pidl)
+    auto *thread = QThread::create([path]()
     {
-        ::SHOpenFolderAndSelectItems(pidl, 0, nullptr, 0);
-        ::ILFree(pidl);
-    }
-    if ((hresult == S_OK) || (hresult == S_FALSE))
-        ::CoUninitialize();
+        if (SUCCEEDED(::CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE)))
+        {
+            const std::wstring pathWStr = path.toString().toStdWString();
+            PIDLIST_ABSOLUTE pidl = ::ILCreateFromPathW(pathWStr.c_str());
+            if (pidl)
+            {
+                ::SHOpenFolderAndSelectItems(pidl, 0, nullptr, 0);
+                ::ILFree(pidl);
+            }
+
+            ::CoUninitialize();
+        }
+    });
+    thread->setObjectName("Utils::Gui::openFolderSelect thread");
+    QObject::connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+    thread->start();
 #elif defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
-    QProcess proc;
-    proc.start("xdg-mime", {"query", "default", "inode/directory"});
-    proc.waitForFinished();
-    const QString output = proc.readLine().simplified();
-    if ((output == "dolphin.desktop") || (output == "org.kde.dolphin.desktop"))
+#ifdef QBT_USES_DBUS
+    // rely on dbus interface
+    QDBusInterface fmInterface {u"org.freedesktop.FileManager1"_s, u"/org/freedesktop/FileManager1"_s
+        , u"org.freedesktop.FileManager1"_s, QDBusConnection::sessionBus()};
+    if (fmInterface.isValid())
     {
-        proc.startDetached("dolphin", {"--select", Utils::Fs::toNativePath(path)});
+        const QStringList params = {toURL(path).toString()};
+        const QDBusPendingCall pcall = fmInterface.asyncCall(u"ShowItems"_s, params, QString());
+        auto watcher = new QDBusPendingCallWatcher(pcall);
+        QObject::connect(watcher, &QDBusPendingCallWatcher::finished, watcher, [path](QDBusPendingCallWatcher *watcher)
+        {
+            watcher->deleteLater();
+
+            const QDBusPendingReply reply = *watcher;
+            if (reply.isError())
+                invokeFileManager(path);
+        });
+        return;
     }
-    else if ((output == "nautilus.desktop") || (output == "org.gnome.Nautilus.desktop")
-                 || (output == "nautilus-folder-handler.desktop"))
-                 {
-        if (pathInfo.isDir())
-            path = path.left(path.lastIndexOf('/'));
-        proc.start("nautilus", {"--version"});
-        proc.waitForFinished();
-        const QString nautilusVerStr = QString(proc.readLine()).remove(QRegularExpression("[^0-9.]"));
-        using NautilusVersion = Utils::Version<int, 3>;
-        if (NautilusVersion::tryParse(nautilusVerStr, {1, 0, 0}) > NautilusVersion {3, 28})
-            proc.startDetached("nautilus", {Utils::Fs::toNativePath(path)});
-        else
-            proc.startDetached("nautilus", {"--no-desktop", Utils::Fs::toNativePath(path)});
-    }
-    else if (output == "nemo.desktop")
-    {
-        if (pathInfo.isDir())
-            path = path.left(path.lastIndexOf('/'));
-        proc.startDetached("nemo", {"--no-desktop", Utils::Fs::toNativePath(path)});
-    }
-    else if ((output == "konqueror.desktop") || (output == "kfmclient_dir.desktop"))
-    {
-        proc.startDetached("konqueror", {"--select", Utils::Fs::toNativePath(path)});
-    }
-    else
-    {
-        // "caja" manager can't pinpoint the file, see: https://github.com/qbittorrent/qBittorrent/issues/5003
-        openPath(path.left(path.lastIndexOf('/')));
-    }
+#endif  // QBT_USES_DBUS
+    invokeFileManager(path);
 #else
-    openPath(path.left(path.lastIndexOf('/')));
+    openPath(path.parentPath());
 #endif
+}
+
+QString Utils::Gui::tagToWidgetText(const Tag &tag)
+{
+    return tag.toString().replace(u'&', u"&&"_s);
+}
+
+Tag Utils::Gui::widgetTextToTag(const QString &text)
+{
+    // replace pairs of '&' with single '&' and remove non-paired occurrences of '&'
+    QString cleanedText;
+    cleanedText.reserve(text.size());
+    bool amp = false;
+    for (const QChar c : text)
+    {
+        if (c == u'&')
+        {
+            amp = !amp;
+            if (amp)
+                continue;
+        }
+
+        cleanedText.append(c);
+    }
+
+    return Tag(cleanedText);
 }

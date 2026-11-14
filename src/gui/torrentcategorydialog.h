@@ -1,6 +1,6 @@
 /*
  * Bittorrent Client using Qt and libtorrent.
- * Copyright (C) 2017  Vladimir Golovnev <glassez@yandex.ru>
+ * Copyright (C) 2017-2025  Vladimir Golovnev <glassez@yandex.ru>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -30,6 +30,13 @@
 
 #include <QDialog>
 
+#include "base/path.h"
+
+namespace BitTorrent
+{
+    struct CategoryOptions;
+}
+
 namespace Ui
 {
     class TorrentCategoryDialog;
@@ -38,21 +45,30 @@ namespace Ui
 class TorrentCategoryDialog : public QDialog
 {
     Q_OBJECT
-    Q_DISABLE_COPY(TorrentCategoryDialog)
+    Q_DISABLE_COPY_MOVE(TorrentCategoryDialog)
 
 public:
     static QString createCategory(QWidget *parent, const QString &parentCategoryName = {});
     static void editCategory(QWidget *parent, const QString &categoryName);
 
     explicit TorrentCategoryDialog(QWidget *parent = nullptr);
+    TorrentCategoryDialog(QWidget *parent, const QString &categoryName, const BitTorrent::CategoryOptions &categoryOptions);
     ~TorrentCategoryDialog() override;
 
     void setCategoryNameEditable(bool editable);
     QString categoryName() const;
     void setCategoryName(const QString &categoryName);
-    QString savePath() const;
-    void setSavePath(const QString &savePath);
+    void setCategoryOptions(const BitTorrent::CategoryOptions &categoryOptions);
+    BitTorrent::CategoryOptions categoryOptions() const;
+
+private slots:
+    void categoryNameChanged(const QString &categoryName);
+    void useDownloadPathChanged(int index);
 
 private:
-    Ui::TorrentCategoryDialog *m_ui;
+    void resetShareLimitsWidgetDefaults();
+
+    Ui::TorrentCategoryDialog *m_ui = nullptr;
+    Path m_lastEnteredDownloadPath;
+    QString m_parentCategoryName;
 };

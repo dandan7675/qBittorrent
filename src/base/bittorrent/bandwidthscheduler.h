@@ -35,11 +35,12 @@
 class BandwidthScheduler : public QObject
 {
     Q_OBJECT
-    Q_DISABLE_COPY(BandwidthScheduler)
+    Q_DISABLE_COPY_MOVE(BandwidthScheduler)
 
 public:
     explicit BandwidthScheduler(QObject *parent = nullptr);
     void start();
+    bool isAlternativeRequested() const;
 
 signals:
     void bandwidthLimitRequested(bool alternative);
@@ -49,5 +50,5 @@ private:
     void onTimeout();
 
     QTimer m_timer;
-    bool m_lastAlternative;
+    bool m_lastAlternative = false;
 };

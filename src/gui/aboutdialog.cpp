@@ -1,5 +1,6 @@
 /*
  * Bittorrent Client using Qt and libtorrent.
+ * Copyright (C) 2026  Vladimir Golovnev <glassez@yandex.ru>
  * Copyright (C) 2006  Christophe Dumez <chris@qbittorrent.org>
  *
  * This program is free software; you can redistribute it and/or
@@ -28,95 +29,149 @@
 
 #include "aboutdialog.h"
 
-#include <QFile>
+#include <QClipboard>
 
+#include "base/path.h"
 #include "base/unicodestrings.h"
+#include "base/utils/io.h"
 #include "base/utils/misc.h"
 #include "base/version.h"
 #include "ui_aboutdialog.h"
 #include "uithememanager.h"
 #include "utils.h"
 
-#define SETTINGS_KEY(name) "AboutDialog/" name
+#ifdef ENABLE_PLUGINS
+#include "base/plugins/pluginsengine.h"
+#endif
+
+using namespace Qt::Literals::StringLiterals;
+
+#define SETTINGS_KEY(name) u"AboutDialog/" name
 
 AboutDialog::AboutDialog(QWidget *parent)
     : QDialog(parent)
-    , m_ui(new Ui::AboutDialog)
-    , m_storeDialogSize(SETTINGS_KEY("Size"))
+    , m_ui {new Ui::AboutDialog}
+    , m_storeDialogSize {SETTINGS_KEY(u"Size"_s)}
 {
     m_ui->setupUi(this);
-    setAttribute(Qt::WA_DeleteOnClose);
 
     // Title
-    m_ui->labelName->setText(QString::fromLatin1("<b><h2>qBittorrent " QBT_VERSION " (%1-bit)</h2></b>").arg(QT_POINTER_SIZE * 8));
+    m_ui->labelName->setText(QStringLiteral("<b><h2>qBittorrent " QBT_VERSION " (%1-bit)</h2></b>").arg(QT_POINTER_SIZE * 8));
 
-    m_ui->logo->setPixmap(Utils::Gui::scaledPixmapSvg(UIThemeManager::instance()->getIconPath(QLatin1String("qbittorrent-tray")), this, 32));
+    m_ui->logo->setPixmap(UIThemeManager::instance()->getScaledPixmap(u"qbittorrent-tray"_s, 32));
 
     // About
-    const QString aboutText = QString(
-        "<p style=\"white-space: pre-wrap;\">"
-        "%1\n\n"
-        "%2\n\n"
-        "<table>"
-        "<tr><td>%3</td><td><a href=\"https://www.qbittorrent.org\">https://www.qbittorrent.org</a></td></tr>"
-        "<tr><td>%4</td><td><a href=\"http://forum.qbittorrent.org\">http://forum.qbittorrent.org</a></td></tr>"
-        "<tr><td>%5</td><td><a href=\"http://bugs.qbittorrent.org\">http://bugs.qbittorrent.org</a></td></tr>"
-        "</table>"
-        "</p>")
+    const QString aboutText =
+        u"<p style=\"white-space: pre-wrap;\">"
+        u"%1\n\n"
+        u"%2\n\n"
+        u"<table>"
+        u"<tr><td>%3</td><td><a href=\"https://www.qbittorrent.org\">https://www.qbittorrent.org</a></td></tr>"
+        u"<tr><td>%4</td><td><a href=\"https://forum.qbittorrent.org\">https://forum.qbittorrent.org</a></td></tr>"
+        u"<tr><td>%5</td><td><a href=\"https://bugs.qbittorrent.org\">https://bugs.qbittorrent.org</a></td></tr>"
+        u"</table>"
+        u"</p>"_s
         .arg(tr("An advanced BitTorrent client programmed in C++, based on Qt toolkit and libtorrent-rasterbar.")
-            , tr("Copyright %1 2006-2021 The qBittorrent project").arg(QString::fromUtf8(C_COPYRIGHT))
+                .replace(u"C++"_s, u"C\u2060+\u2060+"_s) // make C++ non-breaking
+            , tr("Copyright %1 2006-2026 The qBittorrent project").arg(C_COPYRIGHT)
             , tr("Home Page:")
             , tr("Forum:")
             , tr("Bug Tracker:"));
     m_ui->labelAbout->setText(aboutText);
 
-    m_ui->labelMascot->setPixmap(Utils::Gui::scaledPixmap(":/icons/mascot.png", this));
+    m_ui->labelMascot->setPixmap(Utils::Gui::scaledPixmap(Path(u":/icons/mascot.png"_s)));
 
     // Thanks
-    QFile thanksfile(":/thanks.html");
-    if (thanksfile.open(QIODevice::ReadOnly | QIODevice::Text))
+    if (const auto readResult = Utils::IO::readFile(Path(u":/thanks.html"_s), -1, QIODevice::Text))
     {
-        m_ui->textBrowserThanks->setHtml(QString::fromUtf8(thanksfile.readAll().constData()));
-        thanksfile.close();
+        m_ui->textBrowserThanks->setHtml(QString::fromUtf8(readResult.value()));
     }
 
     // Translation
-    QFile translatorsfile(":/translators.html");
-    if (translatorsfile.open(QIODevice::ReadOnly | QIODevice::Text))
+    if (const auto readResult = Utils::IO::readFile(Path(u":/translators.html"_s), -1, QIODevice::Text))
     {
-        m_ui->textBrowserTranslation->setHtml(QString::fromUtf8(translatorsfile.readAll().constData()));
-        translatorsfile.close();
+        m_ui->textBrowserTranslation->setHtml(QString::fromUtf8(readResult.value()));
     }
 
     // License
-    QFile licensefile(":/gpl.html");
-    if (licensefile.open(QIODevice::ReadOnly | QIODevice::Text))
+    if (const auto readResult = Utils::IO::readFile(Path(u":/gpl.html"_s), -1, QIODevice::Text))
     {
-        m_ui->textBrowserLicense->setHtml(QString::fromUtf8(licensefile.readAll().constData()));
-        licensefile.close();
+        m_ui->textBrowserLicense->setHtml(QString::fromUtf8(readResult.value()));
     }
 
     // Software Used
-    m_ui->labelQtVer->setText(QT_VERSION_STR);
+    m_ui->labelQtVer->setText(QStringLiteral(QT_VERSION_STR));
     m_ui->labelLibtVer->setText(Utils::Misc::libtorrentVersionString());
     m_ui->labelBoostVer->setText(Utils::Misc::boostVersionString());
     m_ui->labelOpensslVer->setText(Utils::Misc::opensslVersionString());
     m_ui->labelZlibVer->setText(Utils::Misc::zlibVersionString());
 
-    const QString DBIPText = QString(
-                                 "<html><head/><body><p>"
-                                 "%1"
-                                 " (<a href=\"https://db-ip.com/\">https://db-ip.com/</a>)</p></body></html>")
+#ifdef ENABLE_PLUGINS
+    const Qt::Alignment alignment = m_ui->labelZlib->alignment();
+    const Qt::TextInteractionFlags interactionFlags = m_ui->labelZlibVer->textInteractionFlags();
+
+    const int luaRow = m_ui->gridLayout->rowCount();
+    auto *labelLua = new QLabel(m_ui->SoftwareUsedTab);
+    labelLua->setObjectName("labelLua");
+    labelLua->setAlignment(alignment);
+    labelLua->setText(tr("Lua:"));
+    m_ui->gridLayout->addWidget(labelLua, luaRow, 1);
+    auto *labelLuaVer = new QLabel(m_ui->SoftwareUsedTab);
+    labelLuaVer->setObjectName("labelLuaVer");
+    labelLuaVer->setTextInteractionFlags(interactionFlags);
+    labelLuaVer->setText(PluginsEngine::luaVersion().toString());
+    m_ui->gridLayout->addWidget(labelLuaVer, luaRow, 2);
+
+    const int luaBridgeRow = m_ui->gridLayout->rowCount();
+    auto *labelLuaBridge = new QLabel(m_ui->SoftwareUsedTab);
+    labelLuaBridge->setObjectName("labelLuaBridge");
+    labelLuaBridge->setAlignment(alignment);
+    labelLuaBridge->setText(tr("LuaBridge:"));
+    m_ui->gridLayout->addWidget(labelLuaBridge, luaBridgeRow, 1);
+    auto *labelLuaBridgeVer = new QLabel(m_ui->SoftwareUsedTab);
+    labelLuaBridgeVer->setObjectName("labelLuaBridgeVer");
+    labelLuaBridgeVer->setTextInteractionFlags(interactionFlags);
+    labelLuaBridgeVer->setText(PluginsEngine::luaBridgeVersion().toString());
+    m_ui->gridLayout->addWidget(labelLuaBridgeVer, luaBridgeRow, 2);
+#endif
+
+    connect(m_ui->btnCopyToClipboard, &QAbstractButton::clicked, this, &AboutDialog::copyVersionsToClipboard);
+
+    const QString DBIPText = u"<html><head/><body><p>"
+                             u"%1 (<a href=\"https://db-ip.com/\">https://db-ip.com/</a>)"
+                             u"</p></body></html>"_s
                              .arg(tr("The free IP to Country Lite database by DB-IP is used for resolving the countries of peers. "
                                      "The database is licensed under the Creative Commons Attribution 4.0 International License"));
     m_ui->labelDBIP->setText(DBIPText);
 
-    Utils::Gui::resize(this, m_storeDialogSize);
-    show();
+    if (const QSize dialogSize = m_storeDialogSize; dialogSize.isValid())
+        resize(dialogSize);
+    else
+        adjustSize();
 }
 
 AboutDialog::~AboutDialog()
 {
     m_storeDialogSize = size();
     delete m_ui;
+}
+
+void AboutDialog::copyVersionsToClipboard() const
+{
+#ifdef ENABLE_PLUGINS
+    const QString versions = u"%1 %2\n%3 %4\n%5 %6\n%7 %8\n%9 %10\n%11 %12\n%13 %14\n"_s
+#else
+    const QString versions = u"%1 %2\n%3 %4\n%5 %6\n%7 %8\n%9 %10\n"_s
+#endif
+        .arg(m_ui->labelQt->text(), m_ui->labelQtVer->text()
+            , m_ui->labelLibt->text(), m_ui->labelLibtVer->text()
+            , m_ui->labelBoost->text(), m_ui->labelBoostVer->text()
+            , m_ui->labelOpenssl->text(), m_ui->labelOpensslVer->text()
+            , m_ui->labelZlib->text(), m_ui->labelZlibVer->text()
+#ifdef ENABLE_PLUGINS
+            , tr("Lua:"), PluginsEngine::luaVersion().toString()
+            , tr("LuaBridge:"), PluginsEngine::luaBridgeVersion().toString()
+#endif
+        );
+    qApp->clipboard()->setText(versions);
 }
